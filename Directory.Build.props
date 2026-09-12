@@ -1,0 +1,43 @@
+<Project>
+
+  <!--
+    Shared settings for every project in the repository.
+    Replaces the per-project boilerplate of the old non-SDK csproj files and
+    the linked GlobalAssemblyInfo.cs.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- The old projects were built against a wildcard AssemblyVersion, which
+         deterministic builds reject. Versions are now pinned explicitly. -->
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!-- Assembly identity, formerly GlobalAssemblyInfo.cs -->
+  <PropertyGroup>
+    <Company>Nils Maier</Company>
+    <Product>SimpleDLNA</Product>
+    <Copyright>Copyright © 2012-2016 Nils Maier</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
+    <InformationalVersion>1.2</InformationalVersion>
+  </PropertyGroup>
+
+  <!-- Strong naming, against the single key at the repository root -->
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)sdlna.key.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Attributes the SDK cannot express as properties. -->
+    <Compile Include="$(MSBuildThisFileDirectory)AssemblyAttributes.cs" Link="Properties/AssemblyAttributes.cs" />
+  </ItemGroup>
+
+</Project>

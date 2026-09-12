@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="fsserver/fsserver.csproj" />
+  <Project Path="sdlna/sdlna.csproj" />
+  <Project Path="server/server.csproj" />
+  <Project Path="thumbs/thumbs.csproj" />
+  <Project Path="util/util.csproj" />
+</Solution>
