@@ -7,13 +7,12 @@ using NMaier.SimpleDlna.Utilities;
 
 namespace NMaier.SimpleDlna.Server
 {
-  [Serializable]
   public sealed class Subtitle : IMediaResource
   {
-    [NonSerialized] private static readonly ILog logger =
+    private static readonly ILog logger =
       LogManager.GetLogger(typeof (Subtitle));
 
-    [NonSerialized] private static readonly string[] exts =
+    private static readonly string[] exts =
     {
       ".srt", ".SRT",
       ".ass", ".ASS",
@@ -22,7 +21,7 @@ namespace NMaier.SimpleDlna.Server
       ".vtt", ".VTT"
     };
 
-    [NonSerialized] private byte[] encodedText;
+    private byte[] encodedText;
 
     private string text;
 
@@ -41,6 +40,12 @@ namespace NMaier.SimpleDlna.Server
     }
 
     public bool HasSubtitle => !string.IsNullOrWhiteSpace(text);
+
+    /// <summary>
+    ///   The raw subtitle text, or null when none was found. Exposed so that
+    ///   callers persisting a Subtitle can round-trip it without reflection.
+    /// </summary>
+    public string Text => text;
 
     public DateTime InfoDate => DateTime.UtcNow;
 

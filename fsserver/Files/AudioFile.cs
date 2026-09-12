@@ -1,15 +1,13 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.Serialization;
 using NMaier.SimpleDlna.Server;
 using TagLib;
 using File = TagLib.File;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
-  [Serializable]
   internal sealed class AudioFile
-    : BaseFile, IMediaAudioResource, ISerializable
+    : BaseFile, IMediaAudioResource
   {
     private static readonly TimeSpan emptyDuration = new TimeSpan(0);
     private string album;
@@ -30,31 +28,20 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
     private int? track;
 
-    private AudioFile(SerializationInfo info, DeserializeInfo di)
+    internal AudioFile(BinaryReader reader, DeserializeInfo di)
       : this(di.Server, di.Info, di.Type)
     {
-      album = info.GetString("al");
-      artist = info.GetString("ar");
-      genre = info.GetString("g");
-      performer = info.GetString("p");
-      title = info.GetString("ti");
-      try {
-        track = info.GetInt32("tr");
-      }
-      catch (Exception) {
-        // no op
-      }
-      var ts = info.GetInt64("d");
+      album = reader.ReadNullableString();
+      artist = reader.ReadNullableString();
+      genre = reader.ReadNullableString();
+      performer = reader.ReadNullableString();
+      title = reader.ReadNullableString();
+      track = reader.ReadNullableInt32();
+      var ts = reader.ReadInt64();
       if (ts > 0) {
         duration = new TimeSpan(ts);
       }
       initialized = true;
-    }
-
-    private AudioFile(SerializationInfo info, StreamingContext ctx)
-      :
-        this(info, ctx.Context as DeserializeInfo)
-    {
     }
 
     internal AudioFile(FileServer server, FileInfo aFile, DlnaMime aType)
@@ -184,19 +171,17 @@ namespace NMaier.SimpleDlna.FileMediaServer
       return base.CompareTo(other);
     }
 
-    public void GetObjectData(SerializationInfo info, StreamingContext ctx)
+    internal void Serialize(BinaryWriter writer)
     {
-      if (info == null) {
-        throw new ArgumentNullException(nameof(info));
-      }
-      info.AddValue("al", album);
-      info.AddValue("ar", artist);
-      info.AddValue("g", genre);
-      info.AddValue("p", performer);
-      info.AddValue("ti", title);
-      info.AddValue("tr", track);
-      info.AddValue(
-        "d", duration.GetValueOrDefault(emptyDuration).Ticks);
+      // Note: description is deliberately not persisted, matching the
+      // original GetObjectData. It is recovered from the tag on demand.
+      writer.WriteNullable(album);
+      writer.WriteNullable(artist);
+      writer.WriteNullable(genre);
+      writer.WriteNullable(performer);
+      writer.WriteNullable(title);
+      writer.WriteNullable(track);
+      writer.Write(duration.GetValueOrDefault(emptyDuration).Ticks);
     }
 
     private void InitCover(Tag tag)

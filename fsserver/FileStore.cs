@@ -1,11 +1,7 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Data.Common;
 using System.IO;
-using System.Reflection;
-using System.Runtime.Serialization;
-using System.Runtime.Serialization.Formatters;
-using System.Runtime.Serialization.Formatters.Binary;
 using System.Threading;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
@@ -14,7 +10,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
 {
   internal sealed class FileStore : Logging, IDisposable
   {
-    private const uint SCHEMA = 0x20160618;
+    private const uint SCHEMA = 0x20260912;
 
     private static readonly FileStoreVacuumer vacuumer =
       new FileStoreVacuumer();
@@ -234,20 +230,12 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
       try {
         using (var s = new MemoryStream(data)) {
-          var ctx = new StreamingContext(
-            StreamingContextStates.Persistence,
-            new DeserializeInfo(null, info, DlnaMime.ImageJPEG)
-            );
-          var formatter = new BinaryFormatter(null, ctx)
-          {
-            TypeFormat = FormatterTypeStyle.TypesWhenNeeded,
-            AssemblyFormat = FormatterAssemblyStyle.Simple
-          };
-          var rv = formatter.Deserialize(s) as Cover;
-          return rv;
+          return MediaSerializer.DeserializeCover(
+            s, new DeserializeInfo(null, info, DlnaMime.ImageJPEG));
         }
       }
-      catch (SerializationException ex) {
+      catch (Exception ex) when (
+        ex is InvalidDataException || ex is EndOfStreamException) {
         Debug("Failed to deserialize a cover", ex);
         return null;
       }
@@ -286,28 +274,16 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
       try {
         using (var s = new MemoryStream(data)) {
-          var ctx = new StreamingContext(
-            StreamingContextStates.Persistence,
-            new DeserializeInfo(server, info, type));
-          var formatter = new BinaryFormatter(null, ctx)
-          {
-            TypeFormat = FormatterTypeStyle.TypesWhenNeeded,
-            AssemblyFormat = FormatterAssemblyStyle.Simple
-          };
-          var rv = formatter.Deserialize(s) as BaseFile;
-          if (rv == null) {
-            throw new SerializationException("Deserialized as null");
-          }
+          var rv = MediaSerializer.DeserializeFile(
+            s, new DeserializeInfo(server, info, type));
           rv.Item = info;
           return rv;
         }
       }
-      catch (Exception ex) {
-        if (ex is TargetInvocationException || ex is SerializationException) {
-          Debug("Failed to deserialize an item", ex);
-          return null;
-        }
-        throw;
+      catch (Exception ex) when (
+        ex is InvalidDataException || ex is EndOfStreamException) {
+        Debug("Failed to deserialize an item", ex);
+        return null;
       }
     }
 
@@ -316,31 +292,26 @@ namespace NMaier.SimpleDlna.FileMediaServer
       if (connection == null) {
         return;
       }
-      if (!file.GetType().Attributes.HasFlag(TypeAttributes.Serializable)) {
+      if (!MediaSerializer.CanSerialize(file)) {
         return;
       }
       try {
         using (var s = StreamManager.GetStream()) {
           using (var c = StreamManager.GetStream()) {
-            var ctx = new StreamingContext(
-              StreamingContextStates.Persistence,
-              null
-              );
-            var formatter = new BinaryFormatter(null, ctx)
-            {
-              TypeFormat = FormatterTypeStyle.TypesWhenNeeded,
-              AssemblyFormat = FormatterAssemblyStyle.Simple
-            };
-            formatter.Serialize(s, file);
+            MediaSerializer.Serialize(s, file);
             Cover cover = null;
             try {
               cover = file.MaybeGetCover();
               if (cover != null) {
-                formatter.Serialize(c, cover);
+                MediaSerializer.SerializeCover(c, cover);
               }
             }
             catch (NotSupportedException) {
-              // Ignore and store null.
+              // Ignore and store null. Clearing the local is what makes the
+              // "store null" actually happen: the insert below keys off it,
+              // and a throw part way through SerializeCover would otherwise
+              // persist a truncated cover blob.
+              cover = null;
             }
 
             lock (connection) {

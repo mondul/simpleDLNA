@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.Serialization;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Server.Metadata;
 using NMaier.SimpleDlna.Thumbnails;
@@ -8,9 +7,8 @@ using NMaier.SimpleDlna.Utilities;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
-  [Serializable]
   internal sealed class Cover
-    : Logging, IMediaCoverResource, IMetaInfo, ISerializable, IDisposable
+    : Logging, IMediaCoverResource, IMetaInfo, IDisposable
   {
     private static readonly ThumbnailMaker thumber =
       new ThumbnailMaker();
@@ -24,12 +22,11 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
     private int width = 384;
 
-    private Cover(SerializationInfo info, StreamingContext ctx)
+    internal Cover(BinaryReader reader, DeserializeInfo di)
     {
-      bytes = info.GetValue("b", typeof (byte[])) as byte[];
-      width = info.GetInt32("w");
-      height = info.GetInt32("h");
-      var di = ctx.Context as DeserializeInfo;
+      width = reader.ReadInt32();
+      height = reader.ReadInt32();
+      bytes = reader.ReadByteArray();
       if (di != null) {
         file = di.Info;
       }
@@ -141,17 +138,14 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
     }
 
-    public void GetObjectData(SerializationInfo info, StreamingContext ctx)
+    internal void Serialize(BinaryWriter writer)
     {
-      if (info == null) {
-        throw new ArgumentNullException(nameof(info));
-      }
       if (bytes == null) {
         throw new NotSupportedException("No cover loaded");
       }
-      info.AddValue("b", bytes);
-      info.AddValue("w", width);
-      info.AddValue("h", height);
+      writer.Write(width);
+      writer.Write(height);
+      writer.WriteBytes(bytes);
     }
 
     internal event EventHandler OnCoverLazyLoaded;

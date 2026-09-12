@@ -1,16 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Runtime.Serialization;
 using NMaier.SimpleDlna.Server;
 using TagLib;
 using File = TagLib.File;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
-  [Serializable]
   internal sealed class VideoFile
-    : BaseFile, IMediaVideoResource, ISerializable, IBookmarkable
+    : BaseFile, IMediaVideoResource, IBookmarkable
   {
     private static readonly TimeSpan emptyDuration = new TimeSpan(0);
     private string[] actors;
@@ -35,41 +33,26 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
     private int? width;
 
-    private VideoFile(SerializationInfo info, StreamingContext ctx)
-      : this(info, ctx.Context as DeserializeInfo)
-    {
-    }
-
-    private VideoFile(SerializationInfo info, DeserializeInfo di)
+    internal VideoFile(BinaryReader reader, DeserializeInfo di)
       : this(di.Server, di.Info, di.Type)
     {
-      actors = info.GetValue("a", typeof (string[])) as string[];
-      description = info.GetString("de");
-      director = info.GetString("di");
-      genre = info.GetString("g");
-      title = info.GetString("t");
-      try {
-        width = info.GetInt32("w");
-        height = info.GetInt32("h");
-      }
-      catch (Exception) {
-        // ignored
-      }
-      var ts = info.GetInt64("du");
+      actors = reader.ReadStrings();
+      description = reader.ReadNullableString();
+      director = reader.ReadNullableString();
+      genre = reader.ReadNullableString();
+      title = reader.ReadNullableString();
+      width = reader.ReadNullableInt32();
+      height = reader.ReadNullableInt32();
+      bookmark = reader.ReadNullableInt64();
+      var ts = reader.ReadInt64();
       if (ts > 0) {
         duration = new TimeSpan(ts);
       }
-      try {
-        bookmark = info.GetInt64("b");
-      }
-      catch (Exception) {
-        bookmark = 0;
-      }
-      try {
-        subTitle = info.GetValue("st", typeof (Subtitle)) as Subtitle;
-      }
-      catch (Exception) {
-        subTitle = null;
+      // The presence of the Subtitle instance is recorded separately from its
+      // text, so that "already looked, found none" survives a round trip and
+      // does not send us back to ffmpeg on every listing.
+      if (reader.ReadBoolean()) {
+        subTitle = new Subtitle(reader.ReadNullableString());
       }
       initialized = true;
     }
@@ -204,22 +187,22 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
     }
 
-    public void GetObjectData(SerializationInfo info, StreamingContext context)
+    internal void Serialize(BinaryWriter writer)
     {
-      if (info == null) {
-        throw new ArgumentNullException(nameof(info));
-      }
       MaybeInit();
-      info.AddValue("a", actors, typeof (string[]));
-      info.AddValue("de", description);
-      info.AddValue("di", director);
-      info.AddValue("g", genre);
-      info.AddValue("t", title);
-      info.AddValue("w", width);
-      info.AddValue("h", height);
-      info.AddValue("b", bookmark);
-      info.AddValue("du", duration.GetValueOrDefault(emptyDuration).Ticks);
-      info.AddValue("st", subTitle);
+      writer.WriteStrings(actors);
+      writer.WriteNullable(description);
+      writer.WriteNullable(director);
+      writer.WriteNullable(genre);
+      writer.WriteNullable(title);
+      writer.WriteNullable(width);
+      writer.WriteNullable(height);
+      writer.WriteNullable(bookmark);
+      writer.Write(duration.GetValueOrDefault(emptyDuration).Ticks);
+      writer.Write(subTitle != null);
+      if (subTitle != null) {
+        writer.WriteNullable(subTitle.Text);
+      }
     }
 
     private void MaybeInit()

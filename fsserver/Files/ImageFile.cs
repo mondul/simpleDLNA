@@ -1,15 +1,13 @@
 ﻿using System;
 using System.IO;
-using System.Runtime.Serialization;
 using NMaier.SimpleDlna.Server;
 using TagLib;
 using File = TagLib.File;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
-  [Serializable]
   internal sealed class ImageFile :
-    BaseFile, IMediaImageResource, ISerializable
+    BaseFile, IMediaImageResource
   {
     private string creator;
 
@@ -22,22 +20,14 @@ namespace NMaier.SimpleDlna.FileMediaServer
     private int? width,
       height;
 
-    private ImageFile(SerializationInfo info, StreamingContext context)
-      : this(((DeserializeInfo)context.Context).Server,
-             ((DeserializeInfo)context.Context).Info,
-             ((DeserializeInfo)context.Context).Type)
-    {
-    }
-
-    // ReSharper disable once UnusedMember.Local
-    private ImageFile(SerializationInfo info, DeserializeInfo di)
+    internal ImageFile(BinaryReader reader, DeserializeInfo di)
       : this(di.Server, di.Info, di.Type)
     {
-      creator = info.GetString("cr");
-      description = info.GetString("d");
-      title = info.GetString("t");
-      width = info.GetInt32("w");
-      height = info.GetInt32("h");
+      creator = reader.ReadNullableString();
+      description = reader.ReadNullableString();
+      title = reader.ReadNullableString();
+      width = reader.ReadNullableInt32();
+      height = reader.ReadNullableInt32();
 
       initialized = true;
     }
@@ -110,17 +100,14 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
     }
 
-    public void GetObjectData(SerializationInfo info, StreamingContext ctx)
+    internal void Serialize(BinaryWriter writer)
     {
-      if (info == null) {
-        throw new ArgumentNullException(nameof(info));
-      }
       MaybeInit();
-      info.AddValue("cr", creator);
-      info.AddValue("d", description);
-      info.AddValue("t", title);
-      info.AddValue("w", width);
-      info.AddValue("h", height);
+      writer.WriteNullable(creator);
+      writer.WriteNullable(description);
+      writer.WriteNullable(title);
+      writer.WriteNullable(width);
+      writer.WriteNullable(height);
     }
 
     private void MaybeInit()
