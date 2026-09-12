@@ -13,6 +13,9 @@ Every code change on `master` publishes a
 macOS ARM64, and Linux x64 and ARM64. They carry their own runtime, so
 nothing needs to be installed: unpack and run.
 
+Each release ships a `SHA256SUMS.txt`; verify a download with
+`sha256sum -c SHA256SUMS.txt` (`shasum -a 256 -c` on macOS).
+
 Building
 ---
 
