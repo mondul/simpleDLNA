@@ -1,79 +1,19 @@
-﻿using System;
+using System;
 using System.Data;
-using System.Data.SQLite;
 using System.IO;
-using System.Reflection;
 using log4net;
+using Microsoft.Data.Sqlite;
 
 namespace NMaier.SimpleDlna.Utilities
 {
   public static class Sqlite
   {
-    private const int GROW_SIZE = 1 << 24;
-
-    private static Action<IDbConnection> clearPool;
-
-    private static IDbConnection GetDatabaseConnectionMono(string cs)
-    {
-      Assembly monoSqlite;
-      try {
-        monoSqlite = Assembly.Load(
-          "Mono.Data.Sqlite, Version=4.0.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756");
-      }
-      catch (Exception) {
-        monoSqlite = Assembly.Load(
-          "Mono.Data.Sqlite, Version=2.0.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756");
-      }
-      var dbconn = monoSqlite.GetType(
-        "Mono.Data.Sqlite.SqliteConnection");
-      var ctor = dbconn.GetConstructor(new[] {typeof (string)});
-      if (ctor == null) {
-        throw new ArgumentException("No mono SQLite found");
-      }
-      var rv = ctor.Invoke(new object[] {cs}) as IDbConnection;
-      if (rv == null) {
-        throw new ArgumentException("no connection");
-      }
-      rv.Open();
-      if (clearPool == null) {
-        var cp = dbconn.GetMethod("ClearPool");
-        clearPool = conn =>
-        {
-          cp?.Invoke(null, new object[] {conn});
-        };
-      }
-      return rv;
-    }
-
-    private static IDbConnection GetDatabaseConnectionSDS(string cs)
-    {
-      var rv = new SQLiteConnection(cs);
-      if (rv == null) {
-        throw new ArgumentException("no connection");
-      }
-      rv.Open();
-
-      try {
-        rv.SetChunkSize(GROW_SIZE);
-      }
-      catch (Exception ex) {
-        LogManager.GetLogger(typeof (Sqlite)).Error(
-          "Failed to sqlite control", ex);
-      }
-
-      if (clearPool == null) {
-        clearPool = conn =>
-        {
-          SQLiteConnection.ClearPool(
-            conn as SQLiteConnection);
-        };
-      }
-      return rv;
-    }
-
     public static void ClearPool(IDbConnection conn)
     {
-      clearPool?.Invoke(conn);
+      var sqlite = conn as SqliteConnection;
+      if (sqlite != null) {
+        SqliteConnection.ClearPool(sqlite);
+      }
     }
 
     public static IDbConnection GetDatabaseConnection(FileInfo database)
@@ -87,12 +27,32 @@ namespace NMaier.SimpleDlna.Utilities
           nameof(database)
           );
       }
-      var cs = $"Uri=file:{database.FullName};Pooling=true;Synchronous=Off;journal mode=TRUNCATE;DefaultTimeout=5";
 
-      if (SystemInformation.IsRunningOnMono()) {
-        return GetDatabaseConnectionMono(cs);
+      var cs = new SqliteConnectionStringBuilder
+      {
+        DataSource = database.FullName,
+        Mode = SqliteOpenMode.ReadWriteCreate,
+        Pooling = true,
+        DefaultTimeout = 5
+      }.ConnectionString;
+
+      var rv = new SqliteConnection(cs);
+      rv.Open();
+      try {
+        using (var pragma = rv.CreateCommand()) {
+          // System.Data.SQLite accepted "Synchronous" and "journal mode" as
+          // connection string keywords. Microsoft.Data.Sqlite does not, so
+          // they are applied as pragmas once the connection is open.
+          pragma.CommandText =
+            "PRAGMA synchronous=OFF; PRAGMA journal_mode=TRUNCATE;";
+          pragma.ExecuteNonQuery();
+        }
       }
-      return GetDatabaseConnectionSDS(cs);
+      catch (Exception ex) {
+        LogManager.GetLogger(typeof (Sqlite)).Error(
+          "Failed to configure sqlite connection", ex);
+      }
+      return rv;
     }
   }
 }

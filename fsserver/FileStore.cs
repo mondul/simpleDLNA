@@ -62,41 +62,47 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
       select = connection.CreateCommand();
       select.CommandText =
-        "SELECT data FROM store WHERE key = ? AND size = ? AND time = ?";
+        "SELECT data FROM store WHERE key = @key AND size = @size AND time = @time";
       select.Parameters.Add(selectKey = select.CreateParameter());
+      selectKey.ParameterName = "@key";
       selectKey.DbType = DbType.String;
       select.Parameters.Add(selectSize = select.CreateParameter());
+      selectSize.ParameterName = "@size";
       selectSize.DbType = DbType.Int64;
       select.Parameters.Add(selectTime = select.CreateParameter());
+      selectTime.ParameterName = "@time";
       selectTime.DbType = DbType.Int64;
 
       selectCover = connection.CreateCommand();
       selectCover.CommandText =
-        "SELECT cover FROM store WHERE key = ? AND size = ? AND time = ?";
-      selectCover.Parameters.Add(selectCoverKey = select.CreateParameter());
+        "SELECT cover FROM store WHERE key = @key AND size = @size AND time = @time";
+      selectCover.Parameters.Add(selectCoverKey = selectCover.CreateParameter());
+      selectCoverKey.ParameterName = "@key";
       selectCoverKey.DbType = DbType.String;
-      selectCover.Parameters.Add(selectCoverSize = select.CreateParameter());
+      selectCover.Parameters.Add(selectCoverSize = selectCover.CreateParameter());
+      selectCoverSize.ParameterName = "@size";
       selectCoverSize.DbType = DbType.Int64;
-      selectCover.Parameters.Add(selectCoverTime = select.CreateParameter());
+      selectCover.Parameters.Add(selectCoverTime = selectCover.CreateParameter());
+      selectCoverTime.ParameterName = "@time";
       selectCoverTime.DbType = DbType.Int64;
 
       insert = connection.CreateCommand();
       insert.CommandText =
         "INSERT OR REPLACE INTO store " +
         "VALUES(@key, @size, @time, @data, COALESCE(@cover, (SELECT cover FROM store WHERE key = @key)))";
-      insert.Parameters.Add(insertKey = select.CreateParameter());
+      insert.Parameters.Add(insertKey = insert.CreateParameter());
       insertKey.DbType = DbType.String;
       insertKey.ParameterName = "@key";
-      insert.Parameters.Add(insertSize = select.CreateParameter());
+      insert.Parameters.Add(insertSize = insert.CreateParameter());
       insertSize.DbType = DbType.Int64;
       insertSize.ParameterName = "@size";
-      insert.Parameters.Add(insertTime = select.CreateParameter());
+      insert.Parameters.Add(insertTime = insert.CreateParameter());
       insertTime.DbType = DbType.Int64;
       insertTime.ParameterName = "@time";
-      insert.Parameters.Add(insertData = select.CreateParameter());
+      insert.Parameters.Add(insertData = insert.CreateParameter());
       insertData.DbType = DbType.Binary;
       insertData.ParameterName = "@data";
-      insert.Parameters.Add(insertCover = select.CreateParameter());
+      insert.Parameters.Add(insertCover = insert.CreateParameter());
       insertCover.DbType = DbType.Binary;
       insertCover.ParameterName = "@cover";
 
@@ -344,7 +350,9 @@ namespace NMaier.SimpleDlna.FileMediaServer
                 insertTime.Value = file.Item.LastWriteTimeUtc.Ticks;
                 insertData.Value = s.ToArray();
 
-                insertCover.Value = null;
+                // Microsoft.Data.Sqlite rejects an unset parameter value, so
+                // an absent cover has to be bound as DBNull rather than null.
+                insertCover.Value = DBNull.Value;
                 if (cover != null) {
                   insertCover.Value = c.ToArray();
                 }

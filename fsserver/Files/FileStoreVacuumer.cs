@@ -91,8 +91,9 @@ namespace NMaier.SimpleDlna.FileMediaServer
         using (var trans = connection.BeginTransaction()) {
           using (var q = connection.CreateCommand()) {
             q.Transaction = trans;
-            q.CommandText = "DELETE FROM store WHERE key = ?";
+            q.CommandText = "DELETE FROM store WHERE key = @key";
             var p = q.CreateParameter();
+            p.ParameterName = "@key";
             p.DbType = DbType.String;
             q.Parameters.Add(p);
             foreach (var f in gone) {
