@@ -57,8 +57,11 @@ namespace NMaier.SimpleDlna.Utilities
         }
         // Assembly.CodeBase is .NET Framework only. Location is the modern
         // equivalent, and is empty for assemblies loaded from a single-file
-        // bundle, hence the process path fallback.
+        // bundle, hence the process path fallback. IL3000 flags the Location
+        // read; the empty case is exactly what the next line handles.
+#pragma warning disable IL3000
         var location = Assembly.GetExecutingAssembly().Location;
+#pragma warning restore IL3000
         if (string.IsNullOrEmpty(location)) {
           location = Environment.ProcessPath;
         }

@@ -24,8 +24,14 @@ namespace NMaier.SimpleDlna
         if (window == IntPtr.Zero) {
           throw new Exception("Cannot get console window");
         }
+        // IL3002: GetHINSTANCE returns -1 for a module with no file on disk,
+        // which is the case under single-file publish. LoadImage then fails,
+        // the catch below logs it at debug level and the console keeps its
+        // default icon. Purely cosmetic, so it is not worth special casing.
+#pragma warning disable IL3002
         var inst = Marshal.GetHINSTANCE(
           Assembly.GetEntryAssembly().GetModules()[0]);
+#pragma warning restore IL3002
         var iconLg = SafeNativeMethods.LoadImage(inst, "#32512", 1, 0, 0, 0x40);
         if (iconLg == IntPtr.Zero) {
           throw new Exception("Failed to load large icon");

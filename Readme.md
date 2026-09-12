@@ -5,6 +5,14 @@ A simple, zero-config DLNA media server, that you can just fire up and be done w
 
 See [the github page](http://nmaier.github.io/simpleDLNA/) for more details and downloads.
 
+Downloads
+---
+
+Every code change on `master` publishes a
+[release](../../releases) with self-contained binaries for Windows x64,
+macOS ARM64, and Linux x64 and ARM64. They carry their own runtime, so
+nothing needs to be installed: unpack and run.
+
 Building
 ---
 

@@ -1,0 +1,233 @@
+name: Release
+
+# Every code-bearing push to master publishes a release. Documentation,
+# artwork and repository metadata are ignored so that a typo fix in the
+# readme does not mint a new version.
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'assets/**'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. 2.1.0. Leave empty to bump the patch of the latest tag.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+# The version is derived from the latest tag, so two runs must never be in
+# flight at once. Queue rather than cancel: cancelling would drop a version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+
+jobs:
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      previous_tag: ${{ steps.resolve.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: resolve
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          latest_tag=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+
+          if [ -n "$REQUESTED" ]; then
+            if ! printf '%s' "$REQUESTED" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::'$REQUESTED' is not a valid x.y.z version"
+              exit 1
+            fi
+            version="$REQUESTED"
+          elif [ -z "$latest_tag" ]; then
+            # First release of the .NET 10 line.
+            version="2.0.0"
+          else
+            IFS=. read -r major minor patch <<< "${latest_tag#v}"
+            if [ "$major" -lt 2 ]; then
+              version="2.0.0"
+            else
+              version="$major.$minor.$((patch + 1))"
+            fi
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "::error::Tag v$version already exists"
+            exit 1
+          fi
+
+          {
+            echo "version=$version"
+            echo "previous_tag=$latest_tag"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing **v$version**" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build ${{ matrix.rid }}
+    needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - rid: win-x64
+            archive: zip
+          - rid: osx-arm64
+            archive: tar
+          - rid: linux-x64
+            archive: tar
+          - rid: linux-arm64
+            archive: tar
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Publish
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          # Self-contained so the binary runs without a .NET install, and
+          # single-file so a release is one artifact. All four targets
+          # cross-publish cleanly from Linux -- no native toolchain involved,
+          # just the matching runtime pack.
+          #
+          # Deliberately NOT trimmed: views, comparers and thumbnail loaders
+          # are discovered by reflection over the assembly's types
+          # (Repository<T>, ThumbnailMaker.BuildThumbnailers), which the
+          # trimmer cannot see. Trimming yields a binary that builds fine and
+          # then serves an empty library.
+          dotnet publish sdlna/sdlna.csproj \
+            --configuration Release \
+            --runtime "$RID" \
+            --self-contained true \
+            -p:VersionPrefix="$VERSION" \
+            -p:PublishSingleFile=true \
+            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true \
+            -p:PublishTrimmed=false \
+            -p:DebugType=none \
+            -p:SatelliteResourceLanguages=en \
+            --output publish
+
+      - name: Package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist staging
+          # Ship the executable and the licence only; the publish directory
+          # can also hold stray native .pdb files.
+          find publish -maxdepth 1 -type f ! -name '*.pdb' -exec cp {} staging/ \;
+          cp LICENSE staging/
+          name="sdlna-${VERSION}-${RID}"
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            (cd staging && zip -9 -r "../dist/${name}.zip" .)
+          else
+            tar -czf "dist/${name}.tar.gz" -C staging .
+          fi
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdlna-${{ matrix.rid }}
+          path: dist/*
+          retention-days: 1
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Compose release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PREVIOUS_TAG: ${{ needs.version.outputs.previous_tag }}
+        run: |
+          set -euo pipefail
+          {
+            echo "Self-contained builds of the \`sdlna\` console server."
+            echo "No .NET runtime install is required: unpack and run."
+            echo
+            echo "| Platform | Asset |"
+            echo "| --- | --- |"
+            echo "| Windows x64 | \`sdlna-${VERSION}-win-x64.zip\` |"
+            echo "| macOS ARM64 (Apple silicon) | \`sdlna-${VERSION}-osx-arm64.tar.gz\` |"
+            echo "| Linux x64 | \`sdlna-${VERSION}-linux-x64.tar.gz\` |"
+            echo "| Linux ARM64 | \`sdlna-${VERSION}-linux-arm64.tar.gz\` |"
+            echo
+            echo "Video thumbnails and duration detection additionally need"
+            echo "[ffmpeg](https://ffmpeg.org/) on \`PATH\`, in \`FFMPEG_HOME\`, or"
+            echo "beside the executable. Image and audio handling have no external"
+            echo "dependencies."
+            echo
+            echo "Verify a download against \`SHA256SUMS.txt\`."
+            echo
+            echo "## Changes"
+            echo
+            if [ -n "$PREVIOUS_TAG" ]; then
+              git log --no-merges --pretty=format:'- %s (%h)' "${PREVIOUS_TAG}..HEAD"
+              echo
+              echo
+              echo "**Full diff**: ${{ github.server_url }}/${{ github.repository }}/compare/${PREVIOUS_TAG}...v${VERSION}"
+            else
+              git log --no-merges --pretty=format:'- %s (%h)' -n 25
+              echo
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" dist/* \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --notes-file notes.md
+          echo "Released https://github.com/${{ github.repository }}/releases/tag/v$VERSION" >> "$GITHUB_STEP_SUMMARY"
