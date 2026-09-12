@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Reflection;
 
 namespace NMaier.SimpleDlna.Utilities
@@ -54,8 +55,17 @@ namespace NMaier.SimpleDlna.Utilities
             return titleAttribute.Title;
           }
         }
-        return Path.GetFileNameWithoutExtension(
-          Assembly.GetExecutingAssembly().CodeBase);
+        // Assembly.CodeBase is .NET Framework only. Location is the modern
+        // equivalent, and is empty for assemblies loaded from a single-file
+        // bundle, hence the process path fallback.
+        var location = Assembly.GetExecutingAssembly().Location;
+        if (string.IsNullOrEmpty(location)) {
+          location = Environment.ProcessPath;
+        }
+        if (string.IsNullOrEmpty(location)) {
+          return Assembly.GetExecutingAssembly().GetName().Name;
+        }
+        return Path.GetFileNameWithoutExtension(location);
       }
     }
   }

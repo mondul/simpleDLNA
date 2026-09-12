@@ -83,7 +83,6 @@ namespace NMaier.SimpleDlna.Server
       owner = aOwner;
       client = aClient;
       stream = client.GetStream();
-      client.Client.UseOnlyOverlappedIO = true;
 
       RemoteEndpoint = client.Client.RemoteEndPoint as IPEndPoint;
       LocalEndPoint = client.Client.LocalEndPoint as IPEndPoint;

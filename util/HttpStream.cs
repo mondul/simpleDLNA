@@ -179,7 +179,13 @@ namespace NMaier.SimpleDlna.Utilities
       Close();
       Dispose();
 
+      // TODO: port to HttpClient. HttpWebRequest still functions on .NET 10,
+      // it is only obsoleted, and this class is currently unreferenced by the
+      // rest of the solution, so rewriting it here would be unverifiable
+      // churn.
+#pragma warning disable SYSLIB0014
       request = (HttpWebRequest)WebRequest.Create(uri);
+#pragma warning restore SYSLIB0014
       request.Method = method.ToString();
       if (referrer != null) {
         request.Referer = referrer.ToString();
@@ -264,7 +270,9 @@ namespace NMaier.SimpleDlna.Utilities
       else {
         if (response != null && off > 0 && off < SMALL_SEEK) {
           var buf = new byte[off];
-          bufferedStream.Read(buf, 0, (int)off);
+          // A single Read may return fewer bytes than asked for, which would
+          // leave the stream short of the requested seek position.
+          bufferedStream.ReadExactly(buf, 0, (int)off);
           logger.DebugFormat("Did a small seek of {0}", off);
         }
         else {

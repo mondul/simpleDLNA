@@ -30,6 +30,12 @@ namespace NMaier.SimpleDlna.Utilities
 
     private static bool HasPlatformSupport()
     {
+      // StrCmpLogicalW lives in shlwapi.dll. Probing for it anywhere else just
+      // costs a DllNotFoundException, so short-circuit and use the managed
+      // natural sort below.
+      if (!OperatingSystem.IsWindows()) {
+        return false;
+      }
       try {
         return SafeNativeMethods.StrCmpLogicalW("a", "b") != 0;
       }

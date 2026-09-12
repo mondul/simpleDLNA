@@ -1,17 +1,10 @@
 ﻿using System;
-using System.Runtime.Serialization;
 
 namespace NMaier.SimpleDlna.Utilities
 {
   [Serializable]
   public sealed class RepositoryLookupException : ArgumentException
   {
-    private RepositoryLookupException(SerializationInfo info,
-      StreamingContext context)
-      : base(info, context)
-    {
-    }
-
     public RepositoryLookupException()
     {
     }

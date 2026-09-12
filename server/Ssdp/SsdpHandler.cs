@@ -58,7 +58,6 @@ namespace NMaier.SimpleDlna.Server.Ssdp
 
       queueTimer.Elapsed += ProcessQueue;
 
-      client.Client.UseOnlyOverlappedIO = true;
       client.Client.SetSocketOption(
         SocketOptionLevel.Socket,
         SocketOptionName.ReuseAddress,

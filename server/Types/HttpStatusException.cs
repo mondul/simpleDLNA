@@ -1,16 +1,10 @@
 ﻿using System;
-using System.Runtime.Serialization;
 
 namespace NMaier.SimpleDlna.Server
 {
   [Serializable]
   public sealed class HttpStatusException : HttpException
   {
-    private HttpStatusException(SerializationInfo info, StreamingContext context)
-      : base(info, context)
-    {
-    }
-
     public HttpStatusException()
     {
     }

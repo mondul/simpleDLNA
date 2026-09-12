@@ -55,7 +55,6 @@ namespace NMaier.SimpleDlna.Server
 
       listener = new TcpListener(new IPEndPoint(IPAddress.Any, port));
       listener.Server.Ttl = 32;
-      listener.Server.UseOnlyOverlappedIO = true;
       listener.Start();
 
       RealPort = ((IPEndPoint)listener.LocalEndpoint).Port;

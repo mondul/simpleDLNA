@@ -29,7 +29,24 @@ namespace NMaier.SimpleDlna.Utilities
 
     private void Finish(StreamPumpResult result, StreamPumpCallback callback)
     {
-      callback?.BeginInvoke(this, result, callback.EndInvoke, null);
+      if (callback != null) {
+        // Delegate.BeginInvoke is not supported on .NET and throws
+        // PlatformNotSupportedException, so the callback is queued explicitly.
+        // Dispatching it off the completing I/O thread, as before, keeps a
+        // slow callback from stalling the pump. Unlike the old EndInvoke
+        // continuation, a throwing callback is logged rather than left to
+        // take down the process from a thread pool thread.
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+          try {
+            callback(this, result);
+          }
+          catch (Exception ex) {
+            LogManager.GetLogger(typeof (StreamPump)).Error(
+              "Stream pump callback failed", ex);
+          }
+        });
+      }
       try {
         sem.Release();
       }

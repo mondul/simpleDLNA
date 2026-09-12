@@ -43,7 +43,10 @@ namespace NMaier.SimpleDlna.Utilities
         string mac = null;
 
         try {
-          if (SafeNativeMethods.SendARP(addr, 0, raw, ref length) == 0) {
+          // SendARP is iphlpapi.dll, Windows only. Elsewhere there is no MAC
+          // to report and callers already handle a null.
+          if (OperatingSystem.IsWindows() &&
+              SafeNativeMethods.SendARP(addr, 0, raw, ref length) == 0) {
             mac = $"{raw[0]:X}:{raw[1]:X}:{raw[2]:X}:{raw[3]:X}:{raw[4]:X}:{raw[5]:X}";
           }
         }
