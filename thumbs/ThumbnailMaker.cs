@@ -1,18 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using log4net;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
+using SkiaSharp;
 
 namespace NMaier.SimpleDlna.Thumbnails
 {
   public sealed class ThumbnailMaker : Logging
   {
+    private const int JPEG_QUALITY = 85;
+
     private static readonly LeastRecentlyUsedDictionary<string, CacheItem> cache =
       new LeastRecentlyUsedDictionary<string, CacheItem>(1 << 11);
 
@@ -83,7 +83,7 @@ namespace NMaier.SimpleDlna.Thumbnails
       throw new ArgumentException("Not a supported resource");
     }
 
-    internal static Image ResizeImage(Image image, int width, int height,
+    internal static SKBitmap ResizeImage(SKBitmap image, int width, int height,
       ThumbnailMakerBorder border)
     {
       var nw = (float)image.Width;
@@ -97,44 +97,66 @@ namespace NMaier.SimpleDlna.Thumbnails
         nh = height;
       }
 
-      var result = new Bitmap(
-        border == ThumbnailMakerBorder.Bordered ? width : (int)nw,
-        border == ThumbnailMakerBorder.Bordered ? height : (int)nh
-        );
+      // A source with an extreme aspect ratio can scale to zero on one axis,
+      // which is not a valid bitmap size.
+      var rw = border == ThumbnailMakerBorder.Bordered
+        ? width
+        : Math.Max((int)nw, 1);
+      var rh = border == ThumbnailMakerBorder.Bordered
+        ? height
+        : Math.Max((int)nh, 1);
+
+      var result = new SKBitmap(rw, rh, SKColorType.Rgba8888, SKAlphaType.Premul);
       try {
-        try {
-          result.SetResolution(image.HorizontalResolution, image.VerticalResolution);
-        }
-        catch (Exception ex) {
-          LogManager.GetLogger(typeof (ThumbnailMaker)).Debug("Failed to set resolution", ex);
-        }
-        using (var graphics = Graphics.FromImage(result)) {
-          if (result.Width > image.Width && result.Height > image.Height) {
-            graphics.CompositingQuality =
-              CompositingQuality.HighQuality;
-            graphics.InterpolationMode =
-              InterpolationMode.High;
+        // Mitchell cubic when enlarging, cheap linear filtering when shrinking,
+        // matching the quality/speed split the GDI+ implementation used.
+        var sampling = rw > image.Width && rh > image.Height
+          ? new SKSamplingOptions(SKCubicResampler.Mitchell)
+          : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+        using (var canvas = new SKCanvas(result)) {
+          canvas.Clear(SKColors.Black);
+          using (var img = SKImage.FromBitmap(image)) {
+            var rect = SKRect.Create(
+              (rw - nw) / 2f, (rh - nh) / 2f, nw, nh);
+            canvas.DrawImage(img, rect, sampling);
           }
-          else {
-            graphics.CompositingQuality =
-              CompositingQuality.HighSpeed;
-            graphics.InterpolationMode = InterpolationMode.Bicubic;
-          }
-          var rect = new Rectangle(
-            (int)(result.Width - nw) / 2,
-            (int)(result.Height - nh) / 2,
-            (int)nw, (int)nh
-            );
-          graphics.SmoothingMode = SmoothingMode.HighSpeed;
-          graphics.FillRectangle(
-            Brushes.Black, new Rectangle(0, 0, result.Width, result.Height));
-          graphics.DrawImage(image, rect);
         }
         return result;
       }
       catch (Exception) {
         result.Dispose();
         throw;
+      }
+    }
+
+    /// <summary>
+    ///   Scales <paramref name="image" /> to fit and encodes the result as
+    ///   JPEG, reporting the dimensions actually produced.
+    /// </summary>
+    internal static MemoryStream ResizeToJpeg(SKBitmap image, ref int width,
+      ref int height, ThumbnailMakerBorder border)
+    {
+      using (var scaled = ResizeImage(image, width, height, border)) {
+        width = scaled.Width;
+        height = scaled.Height;
+        var rv = new MemoryStream();
+        try {
+          using (var img = SKImage.FromBitmap(scaled)) {
+            using (var data = img.Encode(
+              SKEncodedImageFormat.Jpeg, JPEG_QUALITY)) {
+              if (data == null) {
+                throw new NotSupportedException(
+                  "Failed to encode the thumbnail as JPEG");
+              }
+              data.SaveTo(rv);
+            }
+          }
+          return rv;
+        }
+        catch (Exception) {
+          rv.Dispose();
+          throw;
+        }
       }
     }
 

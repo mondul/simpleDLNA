@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Threading;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
+using SkiaSharp;
 
 namespace NMaier.SimpleDlna.Thumbnails
 {
@@ -78,21 +77,16 @@ namespace NMaier.SimpleDlna.Thumbnails
             throw new ArgumentException("ffmpeg did not produce a result");
           }
 
-          using (var img = Image.FromStream(thumb)) {
-            using (var scaled = ThumbnailMaker.ResizeImage(img, width, height,
-                                                           ThumbnailMakerBorder.Bordered)) {
-              width = scaled.Width;
-              height = scaled.Height;
-              var rv = new MemoryStream();
-              try {
-                scaled.Save(rv, ImageFormat.Jpeg);
-                return rv;
-              }
-              catch (Exception) {
-                rv.Dispose();
-                throw;
-              }
+          // The pump leaves the stream at the end of what it wrote, and
+          // SKBitmap.Decode reads from the current position.
+          thumb.Seek(0, SeekOrigin.Begin);
+          using (var img = SKBitmap.Decode(thumb)) {
+            if (img == null) {
+              throw new ArgumentException(
+                "ffmpeg did not produce a decodable image");
             }
+            return ThumbnailMaker.ResizeToJpeg(
+              img, ref width, ref height, ThumbnailMakerBorder.Bordered);
           }
         }
       }
