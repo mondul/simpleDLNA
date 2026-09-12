@@ -13,6 +13,12 @@ namespace NMaier.SimpleDlna
 
     public ProgramIcon()
     {
+      // Setting the console window icon is a Windows console concept built on
+      // kernel32/user32. Attempting it elsewhere only produces a
+      // DllNotFoundException and a stack trace in the log on every startup.
+      if (!OperatingSystem.IsWindows()) {
+        return;
+      }
       try {
         window = SafeNativeMethods.GetConsoleWindow();
         if (window == IntPtr.Zero) {
