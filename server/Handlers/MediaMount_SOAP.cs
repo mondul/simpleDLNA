@@ -343,9 +343,13 @@ namespace NMaier.SimpleDlna.Server
     private IEnumerable<KeyValuePair<string, string>> HandleBrowse(
       IRequest request, IHeaders sparams)
     {
-      // Browse results embed per-client MIME types (see DlnaMaps.MimeFor), so
-      // a result built for one kind of client must not be served to another.
-      var key = Prefix + DlnaMaps.MimeVariant(request.Headers) + "\n" +
+      // Browse results embed absolute URLs built from the local address the
+      // client connected to, and per-client MIME types (see DlnaMaps.MimeFor).
+      // A result built for one client must not be served to another that
+      // reached this machine through a different address -- loopback versus
+      // the LAN, or another network interface -- or that needs other types.
+      var key = Prefix + request.LocalEndPoint + "\n" +
+                DlnaMaps.MimeVariant(request.Headers) + "\n" +
                 sparams.HeaderBlock;
       AttributeCollection rv;
       if (soapCache.TryGetValue(key, out rv)) {
