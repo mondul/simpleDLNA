@@ -14,15 +14,7 @@ namespace NMaier.SimpleDlna.Utilities
   public static class FFmpeg
   {
     private static readonly DirectoryInfo[] specialLocations =
-    {
-      GetFFMpegFolder(Environment.SpecialFolder.CommonProgramFiles),
-      GetFFMpegFolder(Environment.SpecialFolder.CommonProgramFilesX86),
-      GetFFMpegFolder(Environment.SpecialFolder.ProgramFiles),
-      GetFFMpegFolder(Environment.SpecialFolder.ProgramFilesX86),
-      GetFFMpegFolder(Environment.SpecialFolder.UserProfile),
-      new DirectoryInfo(Environment.GetFolderPath(
-        Environment.SpecialFolder.UserProfile))
-    };
+      GetSpecialLocations();
 
     private static readonly InfoCache infoCache = new InfoCache(500);
 
@@ -39,11 +31,40 @@ namespace NMaier.SimpleDlna.Utilities
     public static readonly string FFmpegExecutable =
       FindExecutable("ffmpeg");
 
-    private static DirectoryInfo GetFFMpegFolder(
-      Environment.SpecialFolder folder)
+    /// <summary>
+    ///   Conventional folders to look for ffmpeg in.
+    /// </summary>
+    /// <remarks>
+    ///   GetFolderPath returns an empty string for a folder that does not
+    ///   exist on this system: the Program Files folders on Linux and macOS,
+    ///   or a home directory that was never created, as is common for service
+    ///   accounts and containers. Such folders are skipped. new
+    ///   DirectoryInfo("") throws, and throwing in this static initializer
+    ///   would disable FFmpeg -- and with it every video thumbnail and
+    ///   duration -- for the life of the process.
+    /// </remarks>
+    private static DirectoryInfo[] GetSpecialLocations()
     {
-      return new DirectoryInfo(
-        Path.Combine(Environment.GetFolderPath(folder), "ffmpeg"));
+      var rv = new List<DirectoryInfo>();
+      var folders = new[]
+      {
+        Environment.SpecialFolder.CommonProgramFiles,
+        Environment.SpecialFolder.CommonProgramFilesX86,
+        Environment.SpecialFolder.ProgramFiles,
+        Environment.SpecialFolder.ProgramFilesX86,
+        Environment.SpecialFolder.UserProfile
+      };
+      foreach (var folder in folders) {
+        var path = Environment.GetFolderPath(folder);
+        if (!string.IsNullOrEmpty(path)) {
+          rv.Add(new DirectoryInfo(Path.Combine(path, "ffmpeg")));
+        }
+      }
+      var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+      if (!string.IsNullOrEmpty(home)) {
+        rv.Add(new DirectoryInfo(home));
+      }
+      return rv.ToArray();
     }
 
     private static string FindExecutable(string executable)

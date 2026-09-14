@@ -285,8 +285,14 @@ namespace NMaier.SimpleDlna
 
     public const string CACHE_NONE = "none";
 
+    // DoNotVerify: without it GetFolderPath returns "" when the home
+    // directory does not exist yet, which would silently turn the
+    // configuration path into ".sdlna/config.json" relative to wherever sdlna
+    // happens to be run.
     private static string HomeDirectory =>
-      Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+      Environment.GetFolderPath(
+        Environment.SpecialFolder.UserProfile,
+        Environment.SpecialFolderOption.DoNotVerify);
 
     public static string DirectoryPath =>
       Path.Combine(HomeDirectory, ".sdlna");

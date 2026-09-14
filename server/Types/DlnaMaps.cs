@@ -59,7 +59,7 @@ namespace NMaier.SimpleDlna.Server
     {"jpg", "jpe", "jpeg", "jif", "jfif"};
 
     private static readonly string[] extMKV =
-    {"mkv", "matroska", "mk3d", "webm"};
+    {"mkv", "matroska", "mk3d"};
 
     private static readonly string[] extMP3 =
     {"mp3", "mp3p", "mp3x", "mp3a", "mpa"};
@@ -72,6 +72,9 @@ namespace NMaier.SimpleDlna.Server
 
     private static readonly string[] extOGV =
     {"ogm", "ogv"};
+
+    private static readonly string[] extWEBM =
+    {"webm"};
 
     private static readonly string[] extPNG =
     {"png"};
@@ -119,6 +122,7 @@ namespace NMaier.SimpleDlna.Server
       {DlnaMime.VideoMKV, "video/x-matroska"},
       {DlnaMime.VideoMPEG, "video/mpeg"},
       {DlnaMime.VideoOGV, "video/ogg"},
+      {DlnaMime.VideoWEBM, "video/webm"},
       {DlnaMime.VideoWMV, "video/x-ms-wmv"}
     };
 
@@ -261,6 +265,15 @@ namespace NMaier.SimpleDlna.Server
         }
       },
       {
+        // There is no DLNA profile for WebM. It keeps the MATROSKA profile it
+        // was announced with while it shared Matroska's entry, since WebM is
+        // a restricted form of Matroska.
+        DlnaMime.VideoWEBM, new List<string>
+        {
+          "MATROSKA"
+        }
+      },
+      {
         DlnaMime.VideoMPEG, new List<string>
         {
           "MPEG1",
@@ -345,6 +358,8 @@ namespace NMaier.SimpleDlna.Server
         new
         {t = DlnaMime.VideoOGV, e = extOGV},
         new
+        {t = DlnaMime.VideoWEBM, e = extWEBM},
+        new
         {t = DlnaMime.VideoWMV, e = extWMV}
       };
 
@@ -357,7 +372,7 @@ namespace NMaier.SimpleDlna.Server
       }
 
       InitMedia(
-        new[] {ext3GPP, extAVI, extAVC, extFLV, extMKV, extMPEG, extOGV, extWMV},
+        new[] {ext3GPP, extAVI, extAVC, extFLV, extMKV, extMPEG, extOGV, extWEBM, extWMV},
         DlnaMediaTypes.Video);
       InitMedia(
         new[] {extJPEG, extPNG, extGIF},
@@ -374,7 +389,11 @@ namespace NMaier.SimpleDlna.Server
                  from pn in p.Value
                  select
                    string.Format("http-get:*:{1}:DLNA.ORG_PN={0};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={2}", pn,
-                                 mime, DefaultStreaming)).ToList();
+                                 mime, DefaultStreaming))
+        // Types that map to the same MIME and profile for a client, such as
+        // Matroska and WebM for Samsung, would otherwise be listed twice.
+        .Distinct()
+        .ToList();
       return string.Join(",", pns);
     }
 
@@ -397,7 +416,11 @@ namespace NMaier.SimpleDlna.Server
 
     private static string SamsungMime(DlnaMime type)
     {
-      return type == DlnaMime.VideoMKV ? SAMSUNG_MKV_MIME : Mime[type];
+      // WebM included: Samsung clients were always sent video/x-mkv for it
+      // while it shared Matroska's entry, so they keep receiving that.
+      return type == DlnaMime.VideoMKV || type == DlnaMime.VideoWEBM
+        ? SAMSUNG_MKV_MIME
+        : Mime[type];
     }
 
     private static bool IsSamsung(IHeaders requestHeaders)
@@ -415,10 +438,11 @@ namespace NMaier.SimpleDlna.Server
     ///   that sent <paramref name="requestHeaders" />.
     /// </summary>
     /// <remarks>
-    ///   Matroska is announced as video/x-matroska, the type Matroska itself,
-    ///   MiniDLNA and Universal Media Server use. Samsung TVs expect the
-    ///   non-standard video/x-mkv instead, which every client was sent before,
-    ///   so they keep getting it; MiniDLNA makes the same exception.
+    ///   Matroska is announced as video/x-matroska and WebM as video/webm,
+    ///   the types MiniDLNA and Universal Media Server use. Samsung TVs expect
+    ///   the non-standard video/x-mkv for Matroska instead, which every client
+    ///   was sent before -- for WebM too -- so they keep getting it; MiniDLNA
+    ///   makes the same exception.
     /// </remarks>
     internal static string MimeFor(DlnaMime type, IHeaders requestHeaders)
     {

@@ -19,6 +19,10 @@
     VideoMKV,
     VideoMPEG,
     VideoOGV,
-    VideoWMV
+    VideoWMV,
+
+    // Appended rather than kept alphabetical, so the numeric values of the
+    // existing members do not change.
+    VideoWEBM
   }
 }
