@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using log4net;
@@ -12,15 +13,25 @@ using NMaier.SimpleDlna.Utilities;
 
 namespace NMaier.SimpleDlna
 {
-  [GetOptOptions(AcceptPrefixType = ArgumentPrefixTypes.Dashes)]
+  [GetOptOptions(AcceptPrefixType = ArgumentPrefixTypes.Dashes, UsageEpilog = EPILOG)]
   internal class Options : GetOpt
   {
+    private const string EPILOG =
+      "Given folders, sdlna serves just those, using only the options above, and\n" +
+      "ignores the configuration file.\n" +
+      "\n" +
+      "Without folders, sdlna starts the servers saved in ~/.sdlna/config.json\n" +
+      "(%USERPROFILE%\\.sdlna\\config.json on Windows), and only -c, -p, -l,\n" +
+      "--log-file and --no-rescanning apply. Set up servers with\n" +
+      "'sdlna --server add <name> <folder>'; see 'sdlna --server help'.";
     [Argument("cache", HelpVar = "file", HelpText = "Cache file to use for storing meta data (default: none)")] [ShortArgument('c')] public FileInfo CacheFile = null;
 
     [Argument("sort-descending", HelpText = "Sort order; see --list-sort-orders")] [ShortArgument('d')] [FlagArgument(true)] public bool DescendingOrder = false;
 
+    // Deliberately empty by default. Running without folders now starts the
+    // servers from the configuration file instead of serving ".".
     [Parameters(HelpVar = "Directory")] public DirectoryInfo[] Directories =
-    {new DirectoryInfo(".")};
+      new DirectoryInfo[0];
 
     [Argument("name", HelpVar = "name", HelpText = "Friendly name for this server (group)")] [ShortArgument('n')] public
       string FriendlyName = string.Empty;
@@ -58,12 +69,12 @@ namespace NMaier.SimpleDlna
     [Argument("version", HelpText = "Print version")] [ShortArgument('V')] [FlagArgument(true)] public bool ShowVersion
       = false;
 
-    [Argument("type", HelpText = "Types to serv (IMAGE, VIDEO, AUDIO; default: all)")] [ArgumentAlias("what")] [ShortArgument('t')] public DlnaMediaTypes[] Types =
+    [Argument("type", HelpText = "Types to serve (IMAGE, VIDEO, AUDIO; default: all)")] [ArgumentAlias("what")] [ShortArgument('t')] public DlnaMediaTypes[] Types =
     {DlnaMediaTypes.Video, DlnaMediaTypes.Image, DlnaMediaTypes.Audio};
 
     private string[] uas = new string[0];
 
-    [Argument("view", HelpText = "Apply a view (default: no views applied)", HelpVar = "view")] [ShortArgument('v')] public string[] Views = new string[0];
+    [Argument("view", HelpText = "Reshape or filter what clients see; repeat to apply several, in order (default: none). See --list-views", HelpVar = "view")] [ShortArgument('v')] public string[] Views = new string[0];
 
     [Argument("ip", HelpText = "Allow only specified IPs", HelpVar = "IP")]
     [ShortArgument('i')]
@@ -109,8 +120,15 @@ namespace NMaier.SimpleDlna
             "Port must be between 2 and " + ushort.MaxValue);
         }
         port = value;
+        PortSpecified = true;
       }
     }
+
+    /// <summary>
+    ///   Whether -p was given, so that "-p 0" can still override a port set
+    ///   in the configuration file.
+    /// </summary>
+    internal bool PortSpecified { get; private set; }
 
     [Argument("ua", HelpText = "Allow only specified user-agents", HelpVar = "User-Agent")]
     [ShortArgument('u')]
@@ -124,6 +142,42 @@ namespace NMaier.SimpleDlna
           }
         }
         uas = value;
+      }
+    }
+
+    /// <summary>
+    ///   Options that describe a single ad-hoc server. Configured servers
+    ///   carry their own equivalents, so these are rejected in that mode
+    ///   rather than silently ignored.
+    /// </summary>
+    internal IEnumerable<string> GivenServerOptions()
+    {
+      if (Types.Length != 3) {
+        yield return "-t";
+      }
+      if (Views.Length != 0) {
+        yield return "-v";
+      }
+      if (!string.Equals(Order, "title", StringComparison.OrdinalIgnoreCase)) {
+        yield return "-s";
+      }
+      if (DescendingOrder) {
+        yield return "-d";
+      }
+      if (!string.IsNullOrEmpty(FriendlyName)) {
+        yield return "-n";
+      }
+      if (ips.Length != 0) {
+        yield return "-i";
+      }
+      if (macs.Length != 0) {
+        yield return "-m";
+      }
+      if (uas.Length != 0) {
+        yield return "-u";
+      }
+      if (Seperate) {
+        yield return "--seperate";
       }
     }
 
