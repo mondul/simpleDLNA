@@ -16,6 +16,7 @@ See [the github page](http://nmaier.github.io/simpleDLNA/) for more details and 
 - [Views](#views)
 - [Restrictions](#restrictions)
 - [Thumbnails and ffmpeg](#thumbnails-and-ffmpeg)
+- [Testing](#testing)
 - [Project layout](#project-layout)
 
 Building
@@ -386,6 +387,19 @@ Thumbnailing video files and reading their duration requires
 [ffmpeg](https://ffmpeg.org/) on `PATH`, in `FFMPEG_HOME`, or beside the
 `sdlna` executable. Image and audio handling have no external dependencies.
 
+Testing
+---
+
+```
+dotnet test
+```
+
+Runs the test suite, which takes a few seconds. Besides unit tests, it starts
+real servers on free ports and browses them the way TVs do, from the same
+machine. The test servers are never announced on your network. Tests that need
+ffmpeg, or a network address other than loopback, are reported as skipped
+when those aren't available.
+
 Project layout
 ---
 
@@ -396,3 +410,7 @@ Project layout
 | `thumbs`   | `SimpleDlna.Thumbnails`       | Thumbnail generation                                         |
 | `fsserver` | `SimpleDlna.FileMediaServer`  | Filesystem media source and its metadata cache               |
 | `sdlna`    | `sdlna`                       | Console entry point and configuration file                   |
+| `tests`    | `SimpleDlna.Tests`            | Test suite                                                   |
+
+[AGENTS.md](AGENTS.md) explains how the code and tests fit together, the
+conventions to follow and the pitfalls to avoid when changing them.
