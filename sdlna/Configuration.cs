@@ -224,6 +224,53 @@ namespace NMaier.SimpleDlna
       var full = Path.GetFullPath(ConfigurationStore.ExpandHome(folder.Trim()));
       return Path.TrimEndingDirectorySeparator(full);
     }
+
+    /// <summary>
+    ///   The folder with symbolic links resolved in every component, for
+    ///   deciding whether two spellings name the same folder. Path.GetFullPath
+    ///   does not resolve links, so on macOS /tmp/x and /private/tmp/x would
+    ///   otherwise count as different folders and be served twice. Only used
+    ///   for comparison; folders are stored the way the user gave them.
+    /// </summary>
+    public static string CanonicalFolder(string folder)
+    {
+      var path = NormalizeFolder(folder);
+      try {
+        // Bounded: a link target may itself contain links.
+        for (var i = 0; i < 16; ++i) {
+          var resolved = ResolveLinks(path);
+          if (PathComparer.Equals(resolved, path)) {
+            break;
+          }
+          path = resolved;
+        }
+      }
+      catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException) {
+        // Unreadable or dangling: compare what we have.
+      }
+      return path;
+    }
+
+    private static string ResolveLinks(string path)
+    {
+      var root = Path.GetPathRoot(path) ?? string.Empty;
+      var current = root;
+      var parts = path.Substring(root.Length).Split(
+        new[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar},
+        StringSplitOptions.RemoveEmptyEntries);
+      foreach (var part in parts) {
+        var next = Path.Combine(current, part);
+        var info = new DirectoryInfo(next);
+        if (info.LinkTarget != null) {
+          var target = info.ResolveLinkTarget(true);
+          if (target != null) {
+            next = Path.TrimEndingDirectorySeparator(target.FullName);
+          }
+        }
+        current = next;
+      }
+      return Path.TrimEndingDirectorySeparator(current);
+    }
   }
 
   internal static class ConfigurationStore

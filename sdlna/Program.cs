@@ -67,6 +67,16 @@ namespace NMaier.SimpleDlna
     private static void Main(string[] args)
     {
       Console.WriteLine();
+      if (args.Length > 0 && args[0] == "--server") {
+        Environment.ExitCode = ServerCommand.Run(args.Skip(1).ToList());
+        return;
+      }
+      if (args.Contains("--server")) {
+        Console.Error.WriteLine("Error: --server must be the first argument, e.g. sdlna --server help");
+        Environment.ExitCode = 2;
+        return;
+      }
+
       var options = new Options();
       try {
         Console.TreatControlCAsInput = false;
