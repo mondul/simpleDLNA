@@ -285,11 +285,18 @@ namespace NMaier.SimpleDlna
 
     public const string CACHE_NONE = "none";
 
+    /// <summary>
+    ///   Test seam: when set, used in place of the user's home directory, so
+    ///   tests never read or write the real ~/.sdlna.
+    /// </summary>
+    internal static string HomeDirectoryOverride { get; set; }
+
     // DoNotVerify: without it GetFolderPath returns "" when the home
     // directory does not exist yet, which would silently turn the
     // configuration path into ".sdlna/config.json" relative to wherever sdlna
     // happens to be run.
     private static string HomeDirectory =>
+      HomeDirectoryOverride ??
       Environment.GetFolderPath(
         Environment.SpecialFolder.UserProfile,
         Environment.SpecialFolderOption.DoNotVerify);

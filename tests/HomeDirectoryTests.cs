@@ -44,5 +44,18 @@ namespace NMaier.SimpleDlna.Tests
         Assert.DoesNotContain(locations, l => l.FullName.StartsWith(missing, StringComparison.Ordinal));
       });
     }
+
+    /// <summary>
+    ///   Regression: the configuration path became ".sdlna/config.json",
+    ///   relative to wherever sdlna was run.
+    /// </summary>
+    [Fact]
+    public void ConfigurationStaysUnderAMissingHome()
+    {
+      WithMissingHome(missing =>
+      {
+        Assert.Equal(Path.Combine(missing, ".sdlna", "config.json"), ConfigurationStore.FilePath);
+      });
+    }
   }
 }
