@@ -40,6 +40,17 @@ namespace NMaier.SimpleDlna.Server
     }
 
     public HttpServer(int port)
+      : this(port, true)
+    {
+    }
+
+    /// <param name="port">The TCP port, or 0 for any free port.</param>
+    /// <param name="announce">
+    ///   Whether to run SSDP, which announces mounts to the network and answers
+    ///   discovery. Only tests turn it off: without it nothing finds the server,
+    ///   but it no longer needs UDP 1900 or drains byebye datagrams on dispose.
+    /// </param>
+    internal HttpServer(int port, bool announce)
     {
       prefixes.TryAdd(
         "/favicon.ico",
@@ -61,7 +72,9 @@ namespace NMaier.SimpleDlna.Server
 
       NoticeFormat(
         "Running HTTP Server: {0} on port {1}", Signature, RealPort);
-      ssdpServer = new SsdpHandler();
+      if (announce) {
+        ssdpServer = new SsdpHandler();
+      }
 
       timeouter.Elapsed += TimeouterCallback;
       timeouter.Enabled = true;
@@ -89,7 +102,7 @@ namespace NMaier.SimpleDlna.Server
       foreach (var s in servers.Values.ToList()) {
         UnregisterMediaServer(s);
       }
-      ssdpServer.Dispose();
+      ssdpServer?.Dispose();
       timeouter.Dispose();
       listener.Stop();
       foreach (var c in clients.ToList()) {
@@ -264,7 +277,7 @@ namespace NMaier.SimpleDlna.Server
         mount.AddDeviceGuid(deviceGuid, address);
         var uri = new Uri($"http://{address}:{end.Port}{mount.DescriptorURI}");
         lock (list) {
-          ssdpServer.RegisterNotification(deviceGuid, uri, address);
+          ssdpServer?.RegisterNotification(deviceGuid, uri, address);
         }
         NoticeFormat("New mount at: {0}", uri);
       }
@@ -284,7 +297,7 @@ namespace NMaier.SimpleDlna.Server
       if (devicesForServers.TryGetValue(server.UUID, out list)) {
         lock (list) {
           foreach (var deviceGuid in list) {
-            ssdpServer.UnregisterNotification(deviceGuid);
+            ssdpServer?.UnregisterNotification(deviceGuid);
           }
         }
         devicesForServers.TryRemove(server.UUID, out list);

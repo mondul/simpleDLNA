@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>NMaier.SimpleDlna.Tests</RootNamespace>
+    <AssemblyName>SimpleDlna.Tests</AssemblyName>
+    <!-- xUnit v3 test projects are executables run through
+         Microsoft.Testing.Platform; global.json opts dotnet test into it. -->
+    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\fsserver\fsserver.csproj" />
+    <ProjectReference Include="..\sdlna\sdlna.csproj" />
+    <ProjectReference Include="..\server\server.csproj" />
+    <ProjectReference Include="..\thumbs\thumbs.csproj" />
+    <ProjectReference Include="..\util\util.csproj" />
+  </ItemGroup>
+
+</Project>

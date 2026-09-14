@@ -43,7 +43,7 @@ namespace NMaier.SimpleDlna.Utilities
     ///   would disable FFmpeg -- and with it every video thumbnail and
     ///   duration -- for the life of the process.
     /// </remarks>
-    private static DirectoryInfo[] GetSpecialLocations()
+    internal static DirectoryInfo[] GetSpecialLocations()
     {
       var rv = new List<DirectoryInfo>();
       var folders = new[]

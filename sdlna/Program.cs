@@ -190,18 +190,11 @@ namespace NMaier.SimpleDlna
           return;
         }
         if (options.Directories.Length == 0) {
-          // An invalid file still stops here with an error (via
-          // ConfigurationException) rather than being silently bypassed.
-          var config = ConfigurationStore.Load();
-          if (config != null && config.Servers.Count != 0) {
+          var config = ChooseConfiguredServers(options, Console.Error);
+          if (config != null) {
             RunConfiguredServers(options, config);
             return;
           }
-          // Zero-config: nothing is saved, so serve the current directory
-          // exactly as "sdlna ." would, with every command-line option, and
-          // say how to save servers instead of refusing to start.
-          WarnServingCurrentDirectory(config != null);
-          options.Directories = new[] {new DirectoryInfo(".")};
         }
 
         options.SetupLogging();
@@ -278,20 +271,49 @@ namespace NMaier.SimpleDlna
 #endif
     }
 
-    private static void WarnServingCurrentDirectory(bool fileExists)
+    /// <summary>
+    ///   Decides what a run without folders does.
+    /// </summary>
+    /// <returns>
+    ///   The configuration whose servers should start. When none are
+    ///   configured, returns null after writing a warning and pointing
+    ///   <paramref name="options" /> at the current directory, so the run
+    ///   continues exactly as "sdlna ." would.
+    /// </returns>
+    /// <exception cref="ConfigurationException">
+    ///   The configuration file is invalid. That is reported rather than
+    ///   silently bypassed.
+    /// </exception>
+    internal static SdlnaConfiguration ChooseConfiguredServers(Options options,
+      TextWriter warnings)
     {
-      Console.Error.WriteLine(
+      var config = ConfigurationStore.Load();
+      if (config != null && config.Servers.Count != 0) {
+        return config;
+      }
+      // Zero-config: nothing is saved, so serve the current directory with
+      // every command-line option, and say how to save servers instead of
+      // refusing to start.
+      WarnServingCurrentDirectory(config != null, warnings);
+      options.Directories = new[] {new DirectoryInfo(".")};
+      return null;
+    }
+
+    private static void WarnServingCurrentDirectory(bool fileExists,
+      TextWriter warnings)
+    {
+      warnings.WriteLine(
         fileExists
           ? $"Warning: No servers are configured in {ConfigurationStore.FilePath},"
           : "Warning: No servers are configured and no configuration file exists,");
-      Console.Error.WriteLine("so serving the current directory:");
-      Console.Error.WriteLine("  {0}", Path.GetFullPath("."));
-      Console.Error.WriteLine();
-      Console.Error.WriteLine(
+      warnings.WriteLine("so serving the current directory:");
+      warnings.WriteLine("  {0}", Path.GetFullPath("."));
+      warnings.WriteLine();
+      warnings.WriteLine(
         "Nothing has been saved. To set up servers that 'sdlna' starts every time, add one with:");
-      Console.Error.WriteLine("  sdlna --server add <name> <folder>");
-      Console.Error.WriteLine("See 'sdlna --server help' for more.");
-      Console.Error.WriteLine();
+      warnings.WriteLine("  sdlna --server add <name> <folder>");
+      warnings.WriteLine("See 'sdlna --server help' for more.");
+      warnings.WriteLine();
     }
 
     private static void Run(HttpServer server)
@@ -397,7 +419,7 @@ namespace NMaier.SimpleDlna
       }
     }
 
-    private static FileServer SetupConfiguredServer(ServerConfiguration config,
+    internal static FileServer SetupConfiguredServer(ServerConfiguration config,
       FileInfo cacheFile, bool rescanning, HttpServer httpServer)
     {
       // A folder may be on a drive that is not mounted right now; serve the

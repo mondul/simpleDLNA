@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using log4net;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
 using SkiaSharp;
@@ -17,19 +18,37 @@ namespace NMaier.SimpleDlna.Thumbnails
       new LeastRecentlyUsedDictionary<string, CacheItem>(1 << 11);
 
     private static readonly Dictionary<DlnaMediaTypes, List<IThumbnailLoader>> thumbers =
-      BuildThumbnailers();
+      BuildThumbnailers(Assembly.GetExecutingAssembly().GetTypes());
 
-    private static Dictionary<DlnaMediaTypes, List<IThumbnailLoader>> BuildThumbnailers()
+    /// <summary>
+    ///   Instantiates every <see cref="IThumbnailLoader" /> among
+    ///   <paramref name="candidates" />, grouped by the media types it handles.
+    /// </summary>
+    /// <remarks>
+    ///   A loader whose constructor throws is skipped. The video loader throws
+    ///   when ffmpeg is not installed, and this runs in the static initializer:
+    ///   letting that escape made ThumbnailMaker unusable, which took image
+    ///   thumbnails and album art down with it on any machine without ffmpeg.
+    /// </remarks>
+    internal static Dictionary<DlnaMediaTypes, List<IThumbnailLoader>> BuildThumbnailers(
+      IEnumerable<Type> candidates)
     {
       var types = Enum.GetValues(typeof (DlnaMediaTypes));
       var buildThumbnailers = types.Cast<DlnaMediaTypes>().ToDictionary(i => i, i => new List<IThumbnailLoader>());
-      var a = Assembly.GetExecutingAssembly();
-      foreach (var t in a.GetTypes()) {
+      foreach (var t in candidates) {
         if (t.GetInterface("IThumbnailLoader") == null) {
           continue;
         }
         var ctor = t.GetConstructor(new Type[] {});
-        var thumber = ctor?.Invoke(new object[] {}) as IThumbnailLoader;
+        IThumbnailLoader thumber;
+        try {
+          thumber = ctor?.Invoke(new object[] {}) as IThumbnailLoader;
+        }
+        catch (TargetInvocationException ex) {
+          LogManager.GetLogger(typeof (ThumbnailMaker)).InfoFormat(
+            "{0} is unavailable: {1}", t.Name, ex.InnerException?.Message ?? ex.Message);
+          continue;
+        }
         if (thumber == null) {
           continue;
         }
