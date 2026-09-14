@@ -50,18 +50,104 @@ namespace NMaier.SimpleDlna
       }
     }
 
+    /// <summary>
+    ///   What each view does and which options it takes. The one-line
+    ///   descriptions in the view classes do not mention options at all, and
+    ///   several are too vague to choose by. A view missing from this table
+    ///   still gets listed, with its own description.
+    /// </summary>
+    private static readonly (string Name, bool Filter, string Text)[] viewHelp =
+    {
+      ("bytitle", false,
+       "Sorts every file into A-Z folders by the first letter of its title.\n" +
+       "Letters with over 100 files are split further by the words the\n" +
+       "titles start with."),
+      ("flatten", false,
+       "Dissolves folders holding three files or fewer into their parent,\n" +
+       "so sparse, deeply nested trees become shallower."),
+      ("music", false,
+       "Adds Artists, Performers, Albums and Genre folders built from the\n" +
+       "files' tags. The original folders move under \"Folders\"."),
+      ("plain", false,
+       "Puts every file directly in the top folder."),
+      ("series", false,
+       "Gives each TV show with at least two episodes its own folder,\n" +
+       "recognising names like \"Show S01E02\", \"Show 1x02\" or dated names.\n" +
+       "Options: no-cascade"),
+      ("sites", false,
+       "Gives each site with at least two files its own folder, recognising\n" +
+       "names like \"[site] title\" or \"site - title\".\n" +
+       "Options: no-cascade"),
+      ("dimension", true,
+       "Only images and videos whose pixel size is known and in range.\n" +
+       "Options: min (shorter side), max (longer side), minwidth, maxwidth,\n" +
+       "minheight, maxheight"),
+      ("filter", true,
+       "Only files whose title or path contains one of the given words,\n" +
+       "ignoring case. A word containing * or ? must match the whole title\n" +
+       "or path instead.\n" +
+       "Options: the words themselves"),
+      ("large", true,
+       "Only files of at least 300 MB.\n" +
+       "Options: size, in MB"),
+      ("new", true,
+       "Only files modified in the last 7 days.\n" +
+       "Options: date, the earliest modification date, e.g. 2026-01-31")
+    };
+
     private static void ListViews()
     {
-      var items = from v in ViewRepository.ListItems()
-                  orderby v.Key
-                  select v.Value;
-      Console.WriteLine("Available views:");
-      Console.WriteLine("----------------");
-      Console.WriteLine();
-      foreach (var i in items) {
-        Console.WriteLine("  - " + i);
+      const int width = 11;
+      var available = ViewRepository.ListItems();
+
+      void Print(string name, string text)
+      {
+        var lines = text.Split('\n');
+        Console.WriteLine("  " + name.PadRight(width) + lines[0]);
+        foreach (var line in lines.Skip(1)) {
+          Console.WriteLine("  " + new string(' ', width) + line);
+        }
+      }
+
+      void PrintGroup(string heading, bool filter)
+      {
+        Console.WriteLine(heading);
+        Console.WriteLine();
+        foreach (var v in viewHelp.Where(v => v.Filter == filter && available.ContainsKey(v.Name))) {
+          Print(v.Name, v.Text);
+        }
         Console.WriteLine();
       }
+
+      Console.WriteLine("Views change how clients see your media, without touching the files.");
+      Console.WriteLine("Apply them with -v, or with --views add for a configured server. Several");
+      Console.WriteLine("views are applied in the order given, each working on the result of the");
+      Console.WriteLine("one before.");
+      Console.WriteLine();
+      PrintGroup("Reorganizing views build new virtual folders:", false);
+      PrintGroup("Filtering views hide items that do not match:", true);
+
+      var undocumented = available
+        .Where(a => viewHelp.All(v => !v.Name.Equals(a.Key, StringComparison.OrdinalIgnoreCase)))
+        .OrderBy(a => a.Key)
+        .ToList();
+      if (undocumented.Count != 0) {
+        Console.WriteLine("Other views:");
+        Console.WriteLine();
+        foreach (var v in undocumented) {
+          Print(v.Value.Name, v.Value.Description);
+        }
+        Console.WriteLine();
+      }
+
+      Console.WriteLine("Options follow the view's name after a colon, separated by commas:");
+      Console.WriteLine();
+      Console.WriteLine("  sdlna -v large:size=1000 ~/Videos");
+      Console.WriteLine("  sdlna -v new:date=2026-01-31 -v series ~/TV");
+      Console.WriteLine("  sdlna -v filter:holiday,beach -v dimension:min=1080 ~/Pictures");
+      Console.WriteLine();
+      Console.WriteLine("series and sites gather their folders into A-Z folders once there are more");
+      Console.WriteLine("than 50 of them; no-cascade keeps them all at the top.");
     }
 
     private static void Main(string[] args)

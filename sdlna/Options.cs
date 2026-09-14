@@ -17,10 +17,13 @@ namespace NMaier.SimpleDlna
   internal class Options : GetOpt
   {
     private const string EPILOG =
-      "Without folders, sdlna starts the servers saved in its configuration file " +
-      "(~/.sdlna/config.json). Manage them with 'sdlna --server'; see " +
-      "'sdlna --server help'. Given folders, sdlna serves just those, using only " +
-      "the options on the command line, and ignores the configuration file.";
+      "Given folders, sdlna serves just those, using only the options above, and\n" +
+      "ignores the configuration file.\n" +
+      "\n" +
+      "Without folders, sdlna starts the servers saved in ~/.sdlna/config.json\n" +
+      "(%USERPROFILE%\\.sdlna\\config.json on Windows), and only -c, -p, -l,\n" +
+      "--log-file and --no-rescanning apply. Set up servers with\n" +
+      "'sdlna --server add <name> <folder>'; see 'sdlna --server help'.";
     [Argument("cache", HelpVar = "file", HelpText = "Cache file to use for storing meta data (default: none)")] [ShortArgument('c')] public FileInfo CacheFile = null;
 
     [Argument("sort-descending", HelpText = "Sort order; see --list-sort-orders")] [ShortArgument('d')] [FlagArgument(true)] public bool DescendingOrder = false;
@@ -66,7 +69,7 @@ namespace NMaier.SimpleDlna
     [Argument("version", HelpText = "Print version")] [ShortArgument('V')] [FlagArgument(true)] public bool ShowVersion
       = false;
 
-    [Argument("type", HelpText = "Types to serv (IMAGE, VIDEO, AUDIO; default: all)")] [ArgumentAlias("what")] [ShortArgument('t')] public DlnaMediaTypes[] Types =
+    [Argument("type", HelpText = "Types to serve (IMAGE, VIDEO, AUDIO; default: all)")] [ArgumentAlias("what")] [ShortArgument('t')] public DlnaMediaTypes[] Types =
     {DlnaMediaTypes.Video, DlnaMediaTypes.Image, DlnaMediaTypes.Audio};
 
     private string[] uas = new string[0];
