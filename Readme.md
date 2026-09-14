@@ -159,7 +159,7 @@ It is created by the first `sdlna --server add`. A complete example:
 | `mediaTypes` | Any of `video`, `audio`, `images`; at least one. | all three |
 | `sortOrder` | `title`, `date` (file date) or `size`. | `title` |
 | `sortDirection` | `asc` or `desc`. | `asc` |
-| `views` | [Views](#views), applied in order. | none |
+| `views` | [Views](#views), applied in order. A server with no views that serves only audio gets `music`. | none |
 | `restrictions` | [Restrictions](#restrictions): `macs`, `ips`, `userAgents`. | none |
 
 ### Adding and removing servers
@@ -333,6 +333,10 @@ and the same for a configured server:
 ```
 sdlna --server config TV --views add new series
 ```
+
+**A server that serves only audio and has no views gets the `music` view**,
+whether it is configured (`"mediaTypes": ["audio"]`) or run as
+`sdlna -t audio <folder>`. Giving it any view of its own replaces `music`.
 
 `sdlna --list-views` prints this summary.
 

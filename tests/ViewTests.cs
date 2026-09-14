@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.Linq;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Server.Metadata;
 using NMaier.SimpleDlna.Server.Views;
+using NMaier.SimpleDlna.Tests.Support;
 using NMaier.SimpleDlna.Utilities;
 using Xunit;
 
@@ -138,6 +140,34 @@ namespace NMaier.SimpleDlna.Tests
     public void UnknownViewIsReported()
     {
       Assert.Throws<RepositoryLookupException>(() => ViewRepository.Lookup("musik"));
+    }
+
+    private static string[] RootFolders(DirectoryInfo directory, DlnaMediaTypes types)
+    {
+      using (var server = TestFileServer.Create(directory, types)) {
+        server.Rescanning = false;
+        server.Load();
+        var root = (IMediaFolder)server.GetItem(Identifiers.GENERAL_ROOT);
+        return root.ChildFolders.Select(f => f.Title).ToArray();
+      }
+    }
+
+    /// <summary>
+    ///   FileServer.Load gives a server that serves only audio, and has no
+    ///   views, the music view. Any view of its own replaces it.
+    /// </summary>
+    [Fact]
+    public void AudioOnlyServersWithoutViewsGetTheMusicView()
+    {
+      using (var media = new TempDirectory()) {
+        Directory.CreateDirectory(media.Combine("album"));
+        media.WriteFile(Path.Combine("album", "song.mp3"));
+
+        // The file has no tags, so the empty Artists, Performers and Genre
+        // folders are pruned; "Unspecified album" still fills Albums.
+        Assert.Equal(new[] {"Albums", "Folders"}, RootFolders(media.Info, DlnaMediaTypes.Audio).OrderBy(t => t, StringComparer.Ordinal));
+        Assert.Equal(new[] {"album"}, RootFolders(media.Info, DlnaMediaTypes.Audio | DlnaMediaTypes.Video));
+      }
     }
   }
 }
