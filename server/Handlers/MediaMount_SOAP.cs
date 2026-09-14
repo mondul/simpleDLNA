@@ -82,7 +82,7 @@ namespace NMaier.SimpleDlna.Server
 
         res.SetAttribute("protocolInfo", string.Format(
           "http-get:*:{1}:DLNA.ORG_PN={0};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={2}",
-          c.PN, DlnaMaps.Mime[c.Type], DlnaMaps.DefaultStreaming
+          c.PN, DlnaMaps.MimeFor(c.Type, request.Headers), DlnaMaps.DefaultStreaming
                                            ));
         var width = c.MetaWidth;
         var height = c.MetaHeight;
@@ -275,7 +275,7 @@ namespace NMaier.SimpleDlna.Server
 
       res.SetAttribute("protocolInfo", string.Format(
         "http-get:*:{1}:DLNA.ORG_PN={0};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={2}",
-        resource.PN, DlnaMaps.Mime[resource.Type], DlnaMaps.DefaultStreaming
+        resource.PN, DlnaMaps.MimeFor(resource.Type, request.Headers), DlnaMaps.DefaultStreaming
                                          ));
       item.AppendChild(res);
 
@@ -343,7 +343,10 @@ namespace NMaier.SimpleDlna.Server
     private IEnumerable<KeyValuePair<string, string>> HandleBrowse(
       IRequest request, IHeaders sparams)
     {
-      var key = Prefix + sparams.HeaderBlock;
+      // Browse results embed per-client MIME types (see DlnaMaps.MimeFor), so
+      // a result built for one kind of client must not be served to another.
+      var key = Prefix + DlnaMaps.MimeVariant(request.Headers) + "\n" +
+                sparams.HeaderBlock;
       AttributeCollection rv;
       if (soapCache.TryGetValue(key, out rv)) {
         return rv;
@@ -420,11 +423,11 @@ namespace NMaier.SimpleDlna.Server
       };
     }
 
-    private static IHeaders HandleGetProtocolInfo()
+    private static IHeaders HandleGetProtocolInfo(IRequest request)
     {
       return new RawHeaders
       {
-        {"Source", DlnaMaps.ProtocolInfo},
+        {"Source", DlnaMaps.ProtocolInfoFor(request.Headers)},
         {"Sink", string.Empty}
       };
     }
@@ -539,7 +542,7 @@ namespace NMaier.SimpleDlna.Server
           result = HandleGetCurrentConnectionInfo();
           break;
         case "GetProtocolInfo":
-          result = HandleGetProtocolInfo();
+          result = HandleGetProtocolInfo(request);
           break;
         case "IsAuthorized":
           result = HandleIsAuthorized();
