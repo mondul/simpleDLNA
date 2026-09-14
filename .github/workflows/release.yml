@@ -113,9 +113,17 @@ jobs:
         run: |
           set -euo pipefail
           # Self-contained so the binary runs without a .NET install, and
-          # single-file so a release is one artifact. All four targets
-          # cross-publish cleanly from Linux -- no native toolchain involved,
-          # just the matching runtime pack.
+          # single-file so the managed code is one executable. All four
+          # targets cross-publish cleanly from Linux -- no native toolchain
+          # involved, just the matching runtime pack.
+          #
+          # Native libraries (SkiaSharp, SQLite) are NOT bundled into the
+          # executable. Bundled, they must be extracted at startup to
+          # $HOME/.net (or DOTNET_BUNDLE_EXTRACT_BASE_DIR), and when that
+          # directory is missing or read-only -- service accounts, containers
+          # -- the program refuses to start at all ("Failure processing
+          # application bundle"). Left beside the executable, nothing is
+          # extracted and nothing is written to the home directory.
           #
           # Deliberately NOT trimmed: views, comparers and thumbnail loaders
           # are discovered by reflection over the assembly's types
@@ -128,7 +136,7 @@ jobs:
             --self-contained true \
             -p:VersionPrefix="$VERSION" \
             -p:PublishSingleFile=true \
-            -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:IncludeNativeLibrariesForSelfExtract=false \
             -p:EnableCompressionInSingleFile=true \
             -p:PublishTrimmed=false \
             -p:DebugType=none \
@@ -142,8 +150,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist staging
-          # Ship the executable and the licence only; the publish directory
-          # can also hold stray native .pdb files.
+          # Ship the executable, its native libraries and the licence; the
+          # publish directory can also hold stray native .pdb files.
           find publish -maxdepth 1 -type f ! -name '*.pdb' -exec cp {} staging/ \;
           cp LICENSE staging/
           name="sdlna-${VERSION}-${RID}"
@@ -190,7 +198,8 @@ jobs:
           set -euo pipefail
           {
             echo "Self-contained builds of the \`sdlna\` console server."
-            echo "No .NET runtime install is required: unpack and run."
+            echo "No .NET runtime install is required: unpack and run. Keep the"
+            echo "native libraries next to the executable."
             echo
             echo "| Platform | Asset |"
             echo "| --- | --- |"
