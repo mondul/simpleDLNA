@@ -1,8 +1,9 @@
 name: Release
 
-# Every code-bearing push to master publishes a release. Documentation,
-# artwork and repository metadata are ignored so that a typo fix in the
-# readme does not mint a new version.
+# Every code-bearing push to master publishes a release, once the test suite
+# passes on Linux, Windows and macOS. Documentation, artwork, repository
+# metadata and test-only changes are ignored, so that a typo fix in the readme
+# or a new test does not mint a version whose binaries are unchanged.
 on:
   push:
     branches: [master]
@@ -10,6 +11,7 @@ on:
       - '**.md'
       - 'LICENSE'
       - 'assets/**'
+      - 'tests/**'
       - '.gitignore'
       - '.gitattributes'
       - '.editorconfig'
@@ -83,9 +85,62 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Releasing **v$version**" >> "$GITHUB_STEP_SUMMARY"
 
+  test:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      # Let every platform finish, so one run reports all of their failures.
+      fail-fast: false
+      matrix:
+        # One runner per platform the release ships for. The code is the same
+        # on both Linux architectures, so x64 stands in for arm64.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Install ffmpeg
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+          HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        run: |
+          set -euo pipefail
+          # The video thumbnail and duration tests skip themselves without
+          # ffmpeg, which would let this job pass without running them. sdlna
+          # finds ffmpeg by searching PATH, so requiring it on PATH here makes
+          # sure they run on every platform.
+          if ! command -v ffmpeg >/dev/null; then
+            case "$RUNNER_OS" in
+              Linux)
+                sudo apt-get update
+                sudo apt-get install -y --no-install-recommends ffmpeg
+                ;;
+              macOS)
+                brew install ffmpeg
+                ;;
+              Windows)
+                choco install ffmpeg -y --no-progress
+                ;;
+            esac
+          fi
+          ffmpeg -version | sed -n 1p
+
+      - name: Test
+        # Release, as shipped. Platform-specific tests are reported as skipped
+        # with their reason: Windows-only ones elsewhere, and those needing a
+        # POSIX shell or a redirectable HOME on Windows.
+        run: dotnet test --configuration Release
+
   build:
     name: Build ${{ matrix.rid }}
-    needs: version
+    needs: [version, test]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: true

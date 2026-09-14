@@ -269,6 +269,30 @@ Each of these has broken something before.
 - `ConfigurationStore.HomeDirectoryOverride` redirects the file's location
   for tests. Use it (through `ConfigurationHome`) rather than changing `HOME`.
 
+Releases
+---
+
+`.github/workflows/release.yml` publishes a GitHub release for every push to
+`master` that changes shipped code.
+
+- **What doesn't release.** Pushes that only touch `**.md` files, `LICENSE`,
+  `assets/`, `tests/` or git and editor settings are ignored.
+- **Version.** The latest `vX.Y.Z` tag with the patch number bumped. For a new
+  minor or major version, run the workflow by hand (Actions, Release, Run
+  workflow) and enter it.
+- **Tests gate the binaries.** The `test` job runs `dotnet test -c Release`
+  on Linux, Windows and macOS, with ffmpeg installed so the video tests can't
+  quietly skip. Nothing is built unless all three pass.
+- **Binaries.** `build` publishes `win-x64`, `osx-arm64`, `linux-x64` and
+  `linux-arm64` from Linux: self-contained, single-file, native libraries
+  beside the executable, untrimmed (see [Traps](#traps)). `release` uploads
+  the archives with `SHA256SUMS.txt` and notes listing the commits since the
+  previous tag.
+- **Skip tokens.** GitHub skips the workflow when the pushed head commit's
+  message contains `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or
+  `[actions skip]` anywhere, even quoted while explaining something. Keep
+  those strings out of messages you want released, merge commits included.
+
 Before you commit
 ---
 
