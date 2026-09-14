@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
@@ -126,6 +127,38 @@ namespace NMaier.SimpleDlna.Tests.Support
         var envelope = XDocument.Parse(response.Content.ReadAsStringAsync(Cancellation).GetAwaiter().GetResult());
         return envelope.Descendants().First(e => e.Name.LocalName == "Source").Value.Split(',');
       }
+    }
+
+    /// <summary>
+    ///   Sends a GET over an already open connection, the way HttpClient reuses
+    ///   one, and reads the whole response. Returns its headers, with names
+    ///   in upper case.
+    /// </summary>
+    public static Dictionary<string, string> RawGet(Stream stream, string path,
+      string extraHeaders = "")
+    {
+      var request = Encoding.ASCII.GetBytes(
+        $"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nUser-Agent: {GENERIC}\r\n{extraHeaders}\r\n");
+      stream.Write(request, 0, request.Length);
+
+      var head = new StringBuilder();
+      while (!head.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal)) {
+        var b = stream.ReadByte();
+        if (b < 0) {
+          throw new EndOfStreamException("connection closed before the response headers ended");
+        }
+        head.Append((char)b);
+      }
+      var headers = head.ToString()
+        .Split("\r\n", StringSplitOptions.RemoveEmptyEntries)
+        .Skip(1)
+        .Select(l => l.Split(':', 2))
+        .ToDictionary(h => h[0].Trim().ToUpperInvariant(), h => h[1].Trim());
+      string length;
+      if (headers.TryGetValue("CONTENT-LENGTH", out length)) {
+        stream.ReadExactly(new byte[long.Parse(length)]);
+      }
+      return headers;
     }
 
     /// <summary>
