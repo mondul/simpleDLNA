@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -93,7 +94,8 @@ namespace NMaier.SimpleDlna
           return;
         }
         if (options.Directories.Length == 0) {
-          throw new GetOptException("No directories specified");
+          RunConfiguredServers(options);
+          return;
         }
 
         options.SetupLogging();
@@ -159,11 +161,31 @@ namespace NMaier.SimpleDlna
         Console.Error.WriteLine("Error: {0}\n\n", ex.Message);
         options.PrintUsage();
       }
+      catch (ConfigurationException ex) {
+        Console.Error.WriteLine("Error: {0}", ex.Message);
+        Environment.ExitCode = 1;
+      }
 #if !DEBUG
       catch (Exception ex) {
         LogManager.GetLogger(typeof (Program)).Fatal("Failed to run", ex);
       }
 #endif
+    }
+
+    private static void PrintNoServersConfigured(bool fileExists)
+    {
+      Console.WriteLine(
+        fileExists
+          ? $"No media servers are configured in {ConfigurationStore.FilePath}."
+          : "No media servers are configured yet.");
+      Console.WriteLine();
+      Console.WriteLine("Set one up. It is saved, and started every time you run sdlna:");
+      Console.WriteLine("  sdlna --server add <name> <folder>");
+      Console.WriteLine();
+      Console.WriteLine("Or serve folders just this once, without saving anything:");
+      Console.WriteLine("  sdlna <folder> [<folder>...]");
+      Console.WriteLine();
+      Console.WriteLine("Run 'sdlna --server help' to manage servers, or 'sdlna --help' for all options.");
     }
 
     private static void Run(HttpServer server)
@@ -200,6 +222,134 @@ namespace NMaier.SimpleDlna
         fs.Load();
         if (!options.Rescanning) {
           fs.Rescanning = false;
+        }
+      }
+      catch (Exception) {
+        fs.Dispose();
+        throw;
+      }
+      return fs;
+    }
+
+    /// <summary>
+    ///   Starts every server in the configuration file on one HTTP server.
+    ///   Only the process-wide options (port, cache, logging, rescanning)
+    ///   come from the command line here; everything else is per server.
+    /// </summary>
+    private static void RunConfiguredServers(Options options)
+    {
+      var given = options.GivenServerOptions().ToList();
+      if (given.Count != 0) {
+        Console.Error.WriteLine(
+          "Error: these options only apply when folders are given on the command line: {0}",
+          string.Join(", ", given));
+        Console.Error.WriteLine(
+          "Configured servers take these settings from {0}; change them with 'sdlna --server config <name> ...'.",
+          ConfigurationStore.FilePath);
+        Environment.ExitCode = 2;
+        return;
+      }
+
+      var config = ConfigurationStore.Load();
+      if (config == null || config.Servers.Count == 0) {
+        PrintNoServersConfigured(config != null);
+        Environment.ExitCode = 1;
+        return;
+      }
+
+      options.SetupLogging();
+
+      var port = options.PortSpecified ? options.Port : config.Port;
+      var cacheFile = options.CacheFile ?? ConfigurationStore.ResolveCache(config);
+      if (cacheFile?.Directory != null && !cacheFile.Directory.Exists) {
+        cacheFile.Directory.Create();
+      }
+
+      using (new ProgramIcon()) {
+        var httpServer = new HttpServer(port);
+        try {
+          Console.Title = "SimpleDLNA - starting ...";
+          var mounted = 0;
+          foreach (var server in config.Servers) {
+            try {
+              httpServer.InfoFormat("Mounting server {0}", server.Name);
+              var fs = SetupConfiguredServer(server, cacheFile, options.Rescanning, httpServer);
+              httpServer.RegisterMediaServer(fs);
+              ++mounted;
+              httpServer.NoticeFormat("{0} mounted", server.Name);
+            }
+            catch (Exception ex) {
+              httpServer.ErrorFormat("Failed to start server {0}: {1}", server.Name, ex.Message);
+            }
+          }
+          if (mounted == 0) {
+            throw new ConfigurationException("None of the configured servers could be started.");
+          }
+
+          Console.Title = mounted == 1
+            ? $"{config.Servers[0].Name} - running ..."
+            : $"SimpleDLNA - {mounted} servers running ...";
+
+          Run(httpServer);
+        }
+        finally {
+          httpServer.Dispose();
+        }
+      }
+    }
+
+    private static FileServer SetupConfiguredServer(ServerConfiguration config,
+      FileInfo cacheFile, bool rescanning, HttpServer httpServer)
+    {
+      // A folder may be on a drive that is not mounted right now; serve the
+      // rest rather than refusing the whole server.
+      var folders = new List<DirectoryInfo>();
+      foreach (var f in config.Folders) {
+        var folder = new DirectoryInfo(f);
+        if (folder.Exists) {
+          folders.Add(folder);
+        }
+        else {
+          httpServer.WarnFormat("{0}: skipping missing folder {1}", config.Name, folder.FullName);
+        }
+      }
+      if (folders.Count == 0) {
+        throw new InvalidOperationException("none of its folders exist");
+      }
+
+      var ids = new Identifiers(
+        ComparerRepository.Lookup(config.SortOrder), config.Descending);
+      foreach (var v in config.Views) {
+        ids.AddView(v);
+      }
+
+      var fs = new FileServer(
+        MediaTypeNames.ToDlnaMediaTypes(config.MediaTypes), ids, folders.ToArray());
+      try {
+        fs.FriendlyName = config.Name;
+        if (cacheFile != null) {
+          fs.SetCacheFile(cacheFile);
+        }
+        fs.Load();
+        if (!rescanning) {
+          fs.Rescanning = false;
+        }
+
+        // Restrictions are per server, unlike the ad-hoc -i/-m/-u, which
+        // guard the whole HTTP server. An empty set admits everyone.
+        var restrictions = config.Restrictions;
+        if (!restrictions.IsEmpty) {
+          var authorizer = new HttpAuthorizer();
+          if (restrictions.Ips.Count != 0) {
+            authorizer.AddMethod(new IPAddressAuthorizer(restrictions.Ips));
+          }
+          if (restrictions.Macs.Count != 0) {
+            authorizer.AddMethod(new MacAuthorizer(restrictions.Macs));
+          }
+          if (restrictions.UserAgents.Count != 0) {
+            authorizer.AddMethod(new UserAgentAuthorizer(restrictions.UserAgents));
+          }
+          fs.Authorizer = authorizer;
         }
       }
       catch (Exception) {

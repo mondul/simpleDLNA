@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
 
   <!--
     Central package management: versions are declared here once, and the
@@ -16,6 +16,8 @@
     <PackageVersion Include="GetOptNet" Version="4.0.8" />
     <PackageVersion Include="log4net" Version="3.4.0" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageVersion Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
     <PackageVersion Include="SkiaSharp" Version="4.152.0" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.152.0" />
