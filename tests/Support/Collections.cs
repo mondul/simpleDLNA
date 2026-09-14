@@ -14,11 +14,11 @@ namespace NMaier.SimpleDlna.Tests.Support
   }
 
   /// <summary>
-  ///   Tests that start a real HTTP server. Each binds its own port, but the
-  ///   SSDP responder shares UDP 1900, so they run one at a time.
+  ///   Tests that talk to the real HTTP server. They share one server (see
+  ///   DlnaTestServer) and run one at a time, so no test sees another's mounts.
   /// </summary>
   [CollectionDefinition(NAME, DisableParallelization = true)]
-  public sealed class HttpServerCollection
+  public sealed class HttpServerCollection : ICollectionFixture<DlnaTestServer>
   {
     public const string NAME = "HTTP server";
   }

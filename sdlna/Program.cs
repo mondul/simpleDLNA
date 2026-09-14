@@ -419,7 +419,7 @@ namespace NMaier.SimpleDlna
       }
     }
 
-    private static FileServer SetupConfiguredServer(ServerConfiguration config,
+    internal static FileServer SetupConfiguredServer(ServerConfiguration config,
       FileInfo cacheFile, bool rescanning, HttpServer httpServer)
     {
       // A folder may be on a drive that is not mounted right now; serve the
