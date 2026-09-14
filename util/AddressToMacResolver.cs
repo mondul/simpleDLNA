@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -21,6 +21,18 @@ namespace NMaier.SimpleDlna.Utilities
       }
       mac = mac.Trim().ToUpperInvariant();
       return regMac.IsMatch(mac);
+    }
+
+    /// <summary>
+    ///   Formats a MAC address the way MAC restrictions are written.
+    /// </summary>
+    /// <remarks>
+    ///   X2, not X: MacAuthorizer compares against configured entries of the
+    ///   form 01:AF:BC:00:0A:FF, so every octet needs both digits.
+    /// </remarks>
+    internal static string FormatMac(byte[] raw)
+    {
+      return $"{raw[0]:X2}:{raw[1]:X2}:{raw[2]:X2}:{raw[3]:X2}:{raw[4]:X2}:{raw[5]:X2}";
     }
 
     public string Resolve(IPAddress ip)
@@ -47,9 +59,7 @@ namespace NMaier.SimpleDlna.Utilities
           // to report and callers already handle a null.
           if (OperatingSystem.IsWindows() &&
               SafeNativeMethods.SendARP(addr, 0, raw, ref length) == 0) {
-            // X2, not X: MacAuthorizer compares against configured entries of
-            // the form 01:AF:BC:00:0A:FF, so every octet needs both digits.
-            mac = $"{raw[0]:X2}:{raw[1]:X2}:{raw[2]:X2}:{raw[3]:X2}:{raw[4]:X2}:{raw[5]:X2}";
+            mac = FormatMac(raw);
           }
         }
         catch (DllNotFoundException) {

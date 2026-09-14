@@ -23,6 +23,7 @@
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.152.0" />
     <PackageVersion Include="SkiaSharp.NativeAssets.macOS" Version="4.152.0" />
     <PackageVersion Include="TagLibSharp" Version="2.3.0" />
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
   </ItemGroup>
 
 </Project>
