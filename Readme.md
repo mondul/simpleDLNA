@@ -52,14 +52,22 @@ dotnet sdlna/bin/Release/net10.0/sdlna.dll [OPTION]...
 Quick start
 ---
 
-Serve a folder once, with nothing saved:
+With nothing set up, just run `sdlna` in a folder to serve it:
 
 ```
-sdlna ~/Videos
+cd ~/Videos
+sdlna
 ```
 
-Or set up a server that is remembered, then start it (and any others you add)
-by running `sdlna` on its own:
+It warns that no servers are configured and serves the current directory. Or
+name the folders to serve:
+
+```
+sdlna ~/Videos ~/Music
+```
+
+Either way nothing is saved. To keep a setup, add a server. From then on,
+running `sdlna` on its own starts it, along with any others you add:
 
 ```
 sdlna --server add Videos ~/Videos
@@ -76,15 +84,15 @@ Two ways to run
 the options on the command line. The configuration file is not read at all.
 
 **Without folders**, `sdlna` starts every server in the
-[configuration file](#the-configuration-file). If there are none yet, it
-explains how to add one and exits.
-
-> Earlier versions served the current directory when run without folders. To
-> do that now, run `sdlna .`
+[configuration file](#the-configuration-file). If no servers are configured,
+because the file doesn't exist or lists none, it serves the current directory
+instead, exactly as `sdlna .` would, and prints a warning explaining how to
+save servers. A configuration file that exists but is invalid is reported as an
+error rather than skipped.
 
 The options split accordingly. `sdlna --help` lists them all.
 
-| Option | With folders | Without folders |
+| Option | With folders, or no servers configured | Configured servers |
 |---|---|---|
 | `-p`, `--port` | HTTP port (default 0: any free port) | Overrides `port` from the file |
 | `-c`, `--cache` | Metadata cache file (default: none) | Overrides `cache` from the file |

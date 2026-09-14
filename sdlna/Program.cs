@@ -190,8 +190,18 @@ namespace NMaier.SimpleDlna
           return;
         }
         if (options.Directories.Length == 0) {
-          RunConfiguredServers(options);
-          return;
+          // An invalid file still stops here with an error (via
+          // ConfigurationException) rather than being silently bypassed.
+          var config = ConfigurationStore.Load();
+          if (config != null && config.Servers.Count != 0) {
+            RunConfiguredServers(options, config);
+            return;
+          }
+          // Zero-config: nothing is saved, so serve the current directory
+          // exactly as "sdlna ." would, with every command-line option, and
+          // say how to save servers instead of refusing to start.
+          WarnServingCurrentDirectory(config != null);
+          options.Directories = new[] {new DirectoryInfo(".")};
         }
 
         options.SetupLogging();
@@ -268,20 +278,20 @@ namespace NMaier.SimpleDlna
 #endif
     }
 
-    private static void PrintNoServersConfigured(bool fileExists)
+    private static void WarnServingCurrentDirectory(bool fileExists)
     {
-      Console.WriteLine(
+      Console.Error.WriteLine(
         fileExists
-          ? $"No media servers are configured in {ConfigurationStore.FilePath}."
-          : "No media servers are configured yet.");
-      Console.WriteLine();
-      Console.WriteLine("Set one up. It is saved, and started every time you run sdlna:");
-      Console.WriteLine("  sdlna --server add <name> <folder>");
-      Console.WriteLine();
-      Console.WriteLine("Or serve folders just this once, without saving anything:");
-      Console.WriteLine("  sdlna <folder> [<folder>...]");
-      Console.WriteLine();
-      Console.WriteLine("Run 'sdlna --server help' to manage servers, or 'sdlna --help' for all options.");
+          ? $"Warning: No servers are configured in {ConfigurationStore.FilePath},"
+          : "Warning: No servers are configured and no configuration file exists,");
+      Console.Error.WriteLine("so serving the current directory:");
+      Console.Error.WriteLine("  {0}", Path.GetFullPath("."));
+      Console.Error.WriteLine();
+      Console.Error.WriteLine(
+        "Nothing has been saved. To set up servers that 'sdlna' starts every time, add one with:");
+      Console.Error.WriteLine("  sdlna --server add <name> <folder>");
+      Console.Error.WriteLine("See 'sdlna --server help' for more.");
+      Console.Error.WriteLine();
     }
 
     private static void Run(HttpServer server)
@@ -332,24 +342,17 @@ namespace NMaier.SimpleDlna
     ///   Only the process-wide options (port, cache, logging, rescanning)
     ///   come from the command line here; everything else is per server.
     /// </summary>
-    private static void RunConfiguredServers(Options options)
+    private static void RunConfiguredServers(Options options,
+      SdlnaConfiguration config)
     {
       var given = options.GivenServerOptions().ToList();
       if (given.Count != 0) {
         Console.Error.WriteLine(
-          "Error: these options only apply when folders are given on the command line: {0}",
-          string.Join(", ", given));
+          "Error: {0} cannot be used with the servers configured in {1}, which each have their own settings.",
+          string.Join(", ", given), ConfigurationStore.FilePath);
         Console.Error.WriteLine(
-          "Configured servers take these settings from {0}; change them with 'sdlna --server config <name> ...'.",
-          ConfigurationStore.FilePath);
+          "Change those with 'sdlna --server config <name> ...', or give folders to serve them with these options instead.");
         Environment.ExitCode = 2;
-        return;
-      }
-
-      var config = ConfigurationStore.Load();
-      if (config == null || config.Servers.Count == 0) {
-        PrintNoServersConfigured(config != null);
-        Environment.ExitCode = 1;
         return;
       }
 

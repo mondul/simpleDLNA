@@ -22,7 +22,7 @@ namespace NMaier.SimpleDlna.Server
         headers.Add("Last-Modified", meta.InfoDate.ToString("R"));
       }
       headers.Add("Accept-Ranges", "bytes");
-      headers.Add("Content-Type", DlnaMaps.Mime[item.Type]);
+      headers.Add("Content-Type", DlnaMaps.MimeFor(item.Type, request.Headers));
       if (request.Headers.ContainsKey("getcontentFeatures.dlna.org")) {
         try {
           headers.Add(

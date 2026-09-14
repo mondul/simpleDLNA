@@ -21,9 +21,11 @@ namespace NMaier.SimpleDlna
       "ignores the configuration file.\n" +
       "\n" +
       "Without folders, sdlna starts the servers saved in ~/.sdlna/config.json\n" +
-      "(%USERPROFILE%\\.sdlna\\config.json on Windows), and only -c, -p, -l,\n" +
-      "--log-file and --no-rescanning apply. Set up servers with\n" +
-      "'sdlna --server add <name> <folder>'; see 'sdlna --server help'.";
+      "(%USERPROFILE%\\.sdlna\\config.json on Windows); only -c, -p, -l,\n" +
+      "--log-file and --no-rescanning then apply. If no servers are saved, it\n" +
+      "serves the current directory instead, as 'sdlna .' would. Save servers\n" +
+      "with 'sdlna --server add <name> <folder>'; see 'sdlna --server help'.";
+
     [Argument("cache", HelpVar = "file", HelpText = "Cache file to use for storing meta data (default: none)")] [ShortArgument('c')] public FileInfo CacheFile = null;
 
     [Argument("sort-descending", HelpText = "Sort order; see --list-sort-orders")] [ShortArgument('d')] [FlagArgument(true)] public bool DescendingOrder = false;

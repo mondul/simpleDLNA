@@ -14,6 +14,21 @@ namespace NMaier.SimpleDlna.Server
       DlnaFlags.DlnaV15
       );
 
+    /// <summary>
+    ///   The Matroska MIME type Samsung TVs expect instead of video/x-matroska.
+    /// </summary>
+    private const string SAMSUNG_MKV_MIME = "video/x-mkv";
+
+    /// <summary>
+    ///   User-Agent fragments identifying Samsung TVs and players, matched the
+    ///   way MiniDLNA does. "SEC_HHP_" covers most models since 2010;
+    ///   "SamsungWiselinkPro" covers the 2008 Series A.
+    /// </summary>
+    private static readonly string[] samsungUserAgents =
+    {
+      "SEC_HHP_", "SamsungWiselinkPro"
+    };
+
     internal static readonly string DefaultInteractive = FlagsToString(
       DlnaFlags.InteractiveTransferMode |
       DlnaFlags.BackgroundTransferMode |
@@ -101,7 +116,7 @@ namespace NMaier.SimpleDlna.Server
       {DlnaMime.VideoAVC, "video/mp4"},
       {DlnaMime.VideoAVI, "video/avi"},
       {DlnaMime.VideoFLV, "video/flv"},
-      {DlnaMime.VideoMKV, "video/x-mkv"},
+      {DlnaMime.VideoMKV, "video/x-matroska"},
       {DlnaMime.VideoMPEG, "video/mpeg"},
       {DlnaMime.VideoOGV, "video/ogg"},
       {DlnaMime.VideoWMV, "video/x-ms-wmv"}
@@ -289,7 +304,9 @@ namespace NMaier.SimpleDlna.Server
 
     public static readonly Dictionary<DlnaMime, string> MainPN = GenerateMainPN();
 
-    public static readonly string ProtocolInfo = GenerateProtocolInfo();
+    public static readonly string ProtocolInfo = GenerateProtocolInfo(t => Mime[t]);
+
+    private static readonly string samsungProtocolInfo = GenerateProtocolInfo(SamsungMime);
 
     static DlnaMaps()
     {
@@ -350,10 +367,10 @@ namespace NMaier.SimpleDlna.Server
         DlnaMediaTypes.Audio);
     }
 
-    private static string GenerateProtocolInfo()
+    private static string GenerateProtocolInfo(Func<DlnaMime, string> mimeFor)
     {
       var pns = (from p in AllPN
-                 let mime = Mime[p.Key]
+                 let mime = mimeFor(p.Key)
                  from pn in p.Value
                  select
                    string.Format("http-get:*:{1}:DLNA.ORG_PN={0};DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={2}", pn,
@@ -376,6 +393,54 @@ namespace NMaier.SimpleDlna.Server
           Ext2Media.Add(ext.ToUpperInvariant(), t);
         }
       }
+    }
+
+    private static string SamsungMime(DlnaMime type)
+    {
+      return type == DlnaMime.VideoMKV ? SAMSUNG_MKV_MIME : Mime[type];
+    }
+
+    private static bool IsSamsung(IHeaders requestHeaders)
+    {
+      string userAgent;
+      return requestHeaders != null &&
+             requestHeaders.TryGetValue("User-Agent", out userAgent) &&
+             userAgent != null &&
+             samsungUserAgents.Any(
+               s => userAgent.IndexOf(s, StringComparison.Ordinal) >= 0);
+    }
+
+    /// <summary>
+    ///   The MIME type to announce for <paramref name="type" /> to the client
+    ///   that sent <paramref name="requestHeaders" />.
+    /// </summary>
+    /// <remarks>
+    ///   Matroska is announced as video/x-matroska, the type Matroska itself,
+    ///   MiniDLNA and Universal Media Server use. Samsung TVs expect the
+    ///   non-standard video/x-mkv instead, which every client was sent before,
+    ///   so they keep getting it; MiniDLNA makes the same exception.
+    /// </remarks>
+    internal static string MimeFor(DlnaMime type, IHeaders requestHeaders)
+    {
+      return IsSamsung(requestHeaders) ? SamsungMime(type) : Mime[type];
+    }
+
+    /// <summary>
+    ///   Distinguishes clients that are announced different MIME types, for
+    ///   anything that caches responses containing them.
+    /// </summary>
+    internal static string MimeVariant(IHeaders requestHeaders)
+    {
+      return IsSamsung(requestHeaders) ? "samsung" : "standard";
+    }
+
+    /// <summary>
+    ///   The GetProtocolInfo source list for a client, consistent with the
+    ///   types <see cref="MimeFor" /> announces to it.
+    /// </summary>
+    internal static string ProtocolInfoFor(IHeaders requestHeaders)
+    {
+      return IsSamsung(requestHeaders) ? samsungProtocolInfo : ProtocolInfo;
     }
 
     internal static string FlagsToString(DlnaFlags flags)
