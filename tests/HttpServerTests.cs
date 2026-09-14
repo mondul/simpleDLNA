@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using NMaier.SimpleDlna.FileMediaServer;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Tests.Support;
@@ -141,6 +142,34 @@ namespace NMaier.SimpleDlna.Tests
       foreach (var host in new[] {"127.0.0.1", other, "127.0.0.1", other}) {
         var (_, _, didl) = DlnaClient.Browse(host, server.Port, prefix);
         Assert.Equal(new[] {$"{host}:{server.Port}"}, DlnaClient.LinkHosts(didl));
+      }
+    }
+
+    /// <summary>
+    ///   Regression: every response said "Connection: keep-alive", yet the
+    ///   server closes the connection after answering unless the request asked
+    ///   to keep it open. HTTP/1.1 clients believe the header and reuse the
+    ///   connection, so a request sent before the close landed was lost: "The
+    ///   response ended prematurely". It took a busy machine to hit, but CI
+    ///   did.
+    /// </summary>
+    [Fact]
+    public void ConnectionHeaderSaysWhetherTheConnectionStaysOpen()
+    {
+      media.WriteFile("film.mkv");
+      var prefix = Mount();
+
+      using (var client = new TcpClient("127.0.0.1", server.Port)) {
+        var stream = client.GetStream();
+        stream.ReadTimeout = 10000;
+
+        var kept = DlnaClient.RawGet(stream, prefix + "description.xml", "Connection: keep-alive\r\n");
+        Assert.Equal("keep-alive", kept["CONNECTION"]);
+
+        // Still open, as announced; without asking again, it is closed.
+        var closed = DlnaClient.RawGet(stream, prefix + "description.xml");
+        Assert.Equal("close", closed["CONNECTION"]);
+        Assert.Equal(-1, stream.ReadByte());
       }
     }
 

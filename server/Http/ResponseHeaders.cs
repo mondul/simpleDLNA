@@ -13,7 +13,8 @@ namespace NMaier.SimpleDlna.Server
     {
       this["Server"] = HttpServer.Signature;
       this["Date"] = DateTime.Now.ToString("R");
-      this["Connection"] = "keep-alive";
+      // No Connection header: HttpClient.SendResponse writes it, since only
+      // the connection knows whether it will be kept open.
       if (noCache) {
         this["Cache-Control"] = "no-cache";
       }

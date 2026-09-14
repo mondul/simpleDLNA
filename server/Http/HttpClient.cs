@@ -313,6 +313,14 @@ namespace NMaier.SimpleDlna.Server
       var statusCode = response.Status;
       var responseBody = ProcessRanges(response, ref statusCode);
       var responseStream = new ConcatenatedStream();
+      // The connection is only kept when the client asked for it, and the
+      // Connection header must say which. HTTP/1.1 clients otherwise assume
+      // it persists, reuse it, and lose the request they send before it is
+      // closed. Written here rather than set on response.Headers, because
+      // static and error responses are shared between clients.
+      string conn;
+      var keepAlive = Headers.TryGetValue("connection", out conn) &&
+                      conn.ToUpperInvariant() == "KEEP-ALIVE";
       try {
         var headerBlock = new StringBuilder();
         headerBlock.AppendFormat(
@@ -320,7 +328,13 @@ namespace NMaier.SimpleDlna.Server
           (uint)statusCode,
           HttpPhrases.Phrases[statusCode]
           );
-        headerBlock.Append(response.Headers.HeaderBlock);
+        foreach (var h in response.Headers) {
+          if (!string.Equals(h.Key, "Connection", StringComparison.OrdinalIgnoreCase)) {
+            headerBlock.AppendFormat("{0}: {1}\r\n", h.Key, h.Value);
+          }
+        }
+        headerBlock.AppendFormat(
+          "Connection: {0}\r\n", keepAlive ? "keep-alive" : "close");
         headerBlock.Append(CRLF);
 
         var headerStream = new MemoryStream(
@@ -340,9 +354,7 @@ namespace NMaier.SimpleDlna.Server
           if (result == StreamPumpResult.Delivered) {
             DebugFormat("{0} - Done writing response", this);
 
-            string conn;
-            if (Headers.TryGetValue("connection", out conn) &&
-                conn.ToUpperInvariant() == "KEEP-ALIVE") {
+            if (keepAlive) {
               ReadNext();
               return;
             }
