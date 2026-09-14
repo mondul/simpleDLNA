@@ -20,7 +20,7 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
     <PackageVersion Include="Microsoft.IO.RecyclableMemoryStream" Version="3.0.1" />
     <PackageVersion Include="SkiaSharp" Version="4.152.0" />
-    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.152.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.152.0" />
     <PackageVersion Include="SkiaSharp.NativeAssets.macOS" Version="4.152.0" />
     <PackageVersion Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using log4net;
 
@@ -55,9 +54,18 @@ namespace NMaier.SimpleDlna.Utilities
         executable += ".exe";
       }
       var places = new List<DirectoryInfo>();
-      var assemblyLoc = Assembly.GetExecutingAssembly().Location;
-      if (assemblyLoc != null) {
-        places.Add(new FileInfo(assemblyLoc).Directory);
+      // AppContext.BaseDirectory, not Assembly.Location: the latter is an
+      // empty (non-null) string in a single-file app, and FileInfo throws on
+      // an empty path. That threw inside this static initializer, taking the
+      // whole FFmpeg class down with a TypeInitializationException.
+      try {
+        var baseDirectory = AppContext.BaseDirectory;
+        if (!string.IsNullOrEmpty(baseDirectory)) {
+          places.Add(new DirectoryInfo(baseDirectory));
+        }
+      }
+      catch (Exception) {
+        // ignored
       }
       try {
         var ffhome = Environment.GetEnvironmentVariable("FFMPEG_HOME");

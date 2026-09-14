@@ -1,5 +1,5 @@
-*.cs text
+﻿*.cs text
 *.vcproj eol=crlf
 *.csproj eol=crlf
 *.sln eol=crlf
-SimpleDLNA/Resources/LICENSE eol=crlf
+*.slnx eol=crlf
