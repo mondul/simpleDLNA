@@ -3,8 +3,9 @@
 #
 #   run.sh <archive> <work directory>
 #
-# Checks that the archive holds only the executable and the licence, then
-# serves two images and checks that:
+# Checks that the archive holds only the executable and the licence, that
+# --help and -? print the usage and an unknown option prints it and exits
+# with status 2, then serves two images and checks that:
 #   - the server starts with HOME pointing at a directory that doesn't exist
 #     (Linux and macOS), and never creates it,
 #   - a browse lists both images, with links that download them intact,
@@ -49,6 +50,23 @@ fi
 contents=$(ls -A | sort | tr '\n' ' ')
 [ "$contents" = "LICENSE $exe " ] || fail "unexpected archive contents: $contents"
 echo "archive holds: $contents"
+
+# Single-file builds couldn't print the usage (GetOptNet looked for the
+# executable's assembly file, which they don't have).
+usage() {
+  local expected=$1
+  shift
+  local status=0
+  "./$exe" "$@" >"$work/usage.txt" 2>&1 </dev/null || status=$?
+  if [ "$status" -ne "$expected" ] || ! grep -q '^Usage: sdlna ' "$work/usage.txt"; then
+    cat "$work/usage.txt"
+    fail "sdlna $* exited with status $status (expected $expected) or printed no usage"
+  fi
+}
+usage 0 --help
+usage 0 '-?'
+usage 2 --no-such-option
+echo "usage OK"
 
 cp "$fixtures/logo.png" "$fixtures/photo.jpg" "$work/media/"
 

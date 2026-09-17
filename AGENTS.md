@@ -350,8 +350,9 @@ Releases
   [Traps](#traps)). The build fails if the publish output holds anything
   but the executable, and each archive holds just it and `LICENSE`.
 - **Smoke test.** `smoke` runs each archive on its own platform (including an
-  Arm Linux runner) with `.github/smoke/run.sh`: it serves two images with
-  `HOME` pointing nowhere, browses them, checks downloads, JPEG thumbnails
+  Arm Linux runner) with `.github/smoke/run.sh`: it checks that `--help`,
+  `-?` and an unknown option print the usage (and that the latter exits
+  with 2), then serves two images with `HOME` pointing nowhere, browses them, checks downloads, JPEG thumbnails
   and the cache, and stops the server with SIGTERM. `release` waits for all
   four, then uploads the archives with `SHA256SUMS.txt` and notes listing the
   commits since the previous tag.
