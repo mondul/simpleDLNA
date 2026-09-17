@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using NMaier.SimpleDlna.Server;
+using NMaier.SimpleDlna.Utilities;
 using TagLib;
 using File = TagLib.File;
 
@@ -145,7 +146,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
           rv.Add("Director", director);
         }
         if (duration != null) {
-          rv.Add("Duration", duration.Value.ToString("g"));
+          rv.Add("Duration", duration.Value.FormatDuration());
         }
         if (genre != null) {
           rv.Add("Genre", genre);

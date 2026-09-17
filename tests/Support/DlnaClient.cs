@@ -19,6 +19,8 @@ namespace NMaier.SimpleDlna.Tests.Support
 
     public string Duration;
 
+    public string Id;
+
     public string MimeType;
 
     public string Title;
@@ -107,6 +109,7 @@ namespace NMaier.SimpleDlna.Tests.Support
             var res = item.Elements().First(e => e.Name.LocalName == "res" && !e.Value.Contains("/cover/"));
             return new BrowsedItem
             {
+              Id = item.Attribute("id")?.Value,
               Title = item.Elements().First(e => e.Name.LocalName == "title").Value,
               Class = item.Elements().First(e => e.Name.LocalName == "class").Value,
               Url = res.Value,

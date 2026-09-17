@@ -102,10 +102,17 @@ namespace NMaier.SimpleDlna.Server
         var id = path.Split('/')[1];
         InfoFormat("Serving cover {0}", id);
         var item = GetItem(id) as IMediaCover;
-        if (item == null) {
+        var cover = item?.Cover;
+        // Thumbnails are made when first fetched, not when browsed, so a
+        // cover can be listed that turns out not to exist: a video ffmpeg
+        // can't read, a damaged image. Such a cover has no size, and serving
+        // it anyway failed with a 500. So did a link to an item without a
+        // cover, kept by a client or from a cached browse result.
+        var meta = cover as IMetaInfo;
+        if (cover == null || (meta != null && meta.InfoSize == null)) {
           throw new HttpStatusException(HttpCode.NotFound);
         }
-        return new ItemResponse(Prefix, request, item.Cover, "Interactive");
+        return new ItemResponse(Prefix, request, cover, "Interactive");
       }
       if (path.StartsWith("subtitle/", StringComparison.Ordinal)) {
         var id = path.Split('/')[1];

@@ -168,6 +168,10 @@ runs it.
   - `DlnaTestServer` and `DlnaClient` host file servers on a real
     `HttpServer` and talk to it with SOAP, choosing the User-Agent and the
     local address each request connects through.
+  - `CultureScope.CommaDecimals` switches to es-CO, which writes decimals
+    with a comma, so culture-dependent output fails on every machine. With
+    `processWide: true` it reaches the HTTP server's threads too; use that
+    only in a collection that runs alone.
 - **Regression tests name their bug.** Each one's summary says what used to
   go wrong. When adding one, check that it fails with the fix reverted before
   relying on it.
@@ -245,6 +249,12 @@ Each of these has broken something before.
   response's `Content-Type`, and the GetProtocolInfo list. Go through
   `DlnaMaps.MimeFor` and `DlnaMaps.ProtocolInfoFor` instead of reading
   `DlnaMaps.Mime` directly.
+- **Protocol values must not depend on the machine's culture.** Durations
+  were once formatted with `TimeSpan`'s culture-sensitive `"g"`, so an es-CO
+  machine sent `duration="0:00:02,366"`. Format what goes into SOAP and DIDL
+  with `CultureInfo.InvariantCulture`, and durations with
+  `Formatting.FormatDuration` (`H+:MM:SS.FFF` in total hours, as UPnP
+  requires; the HTML index shows the same text).
 - **Loopback clients are always admitted**, by `HttpServer.AuthorizeClient`
   and by `MediaMount.HandleRequest`, whatever the restrictions. Restrictions
   can only be observed from another address.
@@ -253,6 +263,12 @@ Each of these has broken something before.
   header exactly, including case.
 - **Audio-only servers get the `music` view.** `FileServer.Load` adds it when
   the server serves only audio and has no views.
+- **A listed cover must exist, or be a 404.** Clients fetch every
+  `albumArtURI` they are given. An item whose `Cover` is null (audio without
+  embedded art) gets no cover links. Other covers are thumbnails made when
+  first fetched, so a Browse can list one that can't be made; the cover
+  handler answers 404 when a cover has no `InfoSize`. Both cases used to end
+  in a 500.
 
 ### Persistence
 
