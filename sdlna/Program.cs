@@ -55,7 +55,23 @@ namespace NMaier.SimpleDlna
     {
       blockEvent.Set();
       LogManager.GetLogger(typeof (Program)).Info(reason);
-      Console.Title = "SimpleDLNA - shutting down ...";
+      SetTitle("SimpleDLNA - shutting down ...");
+    }
+
+    /// <summary>
+    ///   Sets the console window's title, if there is a console window: a
+    ///   service or scheduled task may run without one.
+    /// </summary>
+    private static void SetTitle(string title)
+    {
+      try {
+        Console.Title = title;
+      }
+      catch (Exception ex) when (
+        ex is IOException || ex is PlatformNotSupportedException ||
+        ex is System.ComponentModel.Win32Exception) {
+        // No console to title.
+      }
     }
 
     private static void ListOrders()
@@ -187,7 +203,12 @@ namespace NMaier.SimpleDlna
 
       var options = new Options();
       try {
-        Console.TreatControlCAsInput = false;
+        // On Windows this changes the console's input mode, and throws when
+        // standard input is not a console: a background job, a scheduled task,
+        // a service wrapper. Ctrl+C can't arrive through such an input anyway.
+        if (!Console.IsInputRedirected) {
+          Console.TreatControlCAsInput = false;
+        }
         Console.CancelKeyPress += CancelKeyPressed;
         try {
           terminateRegistration = PosixSignalRegistration.Create(
@@ -244,7 +265,7 @@ namespace NMaier.SimpleDlna
                   new UserAgentAuthorizer(options.UserAgents));
               }
 
-              Console.Title = "SimpleDLNA - starting ...";
+              SetTitle("SimpleDLNA - starting ...");
 
               var types = options.Types[0];
               foreach (var t in options.Types) {
@@ -278,7 +299,7 @@ namespace NMaier.SimpleDlna
                   options.Directories[0], options.Directories.Length);
               }
 
-              Console.Title = $"{friendlyName} - running ...";
+              SetTitle($"{friendlyName} - running ...");
 
               Run(server);
             }
@@ -300,6 +321,10 @@ namespace NMaier.SimpleDlna
 #if !DEBUG
       catch (Exception ex) {
         LogManager.GetLogger(typeof (Program)).Fatal("Failed to run", ex);
+        // Logging may not be set up yet, and then the line above goes
+        // nowhere: without this, sdlna would exit silently with status 0.
+        Console.Error.WriteLine("Error: {0}", ex.Message);
+        Environment.ExitCode = 1;
       }
 #endif
     }
@@ -440,7 +465,7 @@ namespace NMaier.SimpleDlna
         var httpServer = new HttpServer(port);
         var fileServers = new List<FileServer>();
         try {
-          Console.Title = "SimpleDLNA - starting ...";
+          SetTitle("SimpleDLNA - starting ...");
           var mounted = 0;
           foreach (var server in config.Servers) {
             try {
@@ -459,9 +484,9 @@ namespace NMaier.SimpleDlna
             throw new ConfigurationException("None of the configured servers could be started.");
           }
 
-          Console.Title = mounted == 1
+          SetTitle(mounted == 1
             ? $"{config.Servers[0].Name} - running ..."
-            : $"SimpleDLNA - {mounted} servers running ...";
+            : $"SimpleDLNA - {mounted} servers running ...");
 
           Run(httpServer);
         }
