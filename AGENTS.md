@@ -51,20 +51,22 @@ HOME=$(mktemp -d) dotnet sdlna/bin/Debug/net10.0/sdlna.dll --server add Test ~/V
 To produce a release-style binary:
 
 ```bash
-dotnet publish sdlna/sdlna.csproj -c Release -r osx-arm64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=false -p:PublishTrimmed=false
+dotnet publish sdlna/sdlna.csproj -c Release -r osx-arm64 --self-contained -p:PublishSingleFile=true -p:PublishTrimmed=false
 ```
 
-Both of the last two properties matter; see [Traps](#traps).
+The result is one executable with nothing beside it, because every
+dependency is managed code; see [Traps](#traps). `PublishTrimmed=false`
+matters too.
 
 Layout
 ---
 
 | Project    | Assembly                     | Depends on                   | Role |
 |------------|------------------------------|------------------------------|------|
-| `util`     | `SimpleDlna.Utilities`       | -                            | Logging base class, SQLite helpers, ffmpeg discovery and invocation, `StreamPump`, MAC lookup, natural sorting, `Repository<T>` |
+| `util`     | `SimpleDlna.Utilities`       | -                            | Logging base class, ffmpeg discovery and invocation, `StreamPump`, MAC lookup, natural sorting, `Repository<T>` |
 | `server`   | `SimpleDlna.Server`          | util                         | HTTP server, SSDP, UPnP/DLNA handlers, MIME and profile maps, views, comparers |
 | `thumbs`   | `SimpleDlna.Thumbnails`      | util, server                 | Thumbnails: images through ImageSharp, video through ffmpeg |
-| `fsserver` | `SimpleDlna.FileMediaServer` | util, server, thumbs         | `FileServer`: scans folders into media items, reads tags with TagLibSharp, caches metadata in SQLite |
+| `fsserver` | `SimpleDlna.FileMediaServer` | util, server, thumbs         | `FileServer`: scans folders into media items, reads tags with TagLibSharp, caches metadata in LiteDB |
 | `sdlna`    | `sdlna`                      | util, server, fsserver       | Console entry point, command-line options, configuration file, `--server` commands |
 | `tests`    | `SimpleDlna.Tests`           | all of the above             | xUnit v3 test suite |
 
@@ -101,7 +103,7 @@ Management; `PackageReference` items in projects carry no `Version`).
 - **Views** (`server/Views`) rebuild or filter the folder tree. `Identifiers`
   (`server/Types`) applies them in order when the tree is loaded.
 - **Metadata cache.** `fsserver/FileStore.cs` keeps each file's metadata and
-  cover in SQLite, encoded by `fsserver/Files/MediaSerializer.cs`.
+  cover in a LiteDB database, encoded by `fsserver/Files/MediaSerializer.cs`.
 - **Configuration file.** `sdlna/Configuration.cs` holds the model,
   validation and loading/saving; `sdlna/ServerCommand.cs` the `--server`
   commands.
@@ -200,11 +202,13 @@ Each of these has broken something before.
   exist**, such as the home folder of a service account. Pass
   `Environment.SpecialFolderOption.DoNotVerify` when you need the path, and
   skip empty results when searching (`FFmpeg.GetSpecialLocations`).
-- **Single-file bundles and native libraries.** With
-  `IncludeNativeLibrariesForSelfExtract=true`, the host extracts SQLite
-  into `$HOME/.net` before `Main` runs, and refuses to start at all
-  when `HOME` is missing or read-only. Publish them beside the executable
-  instead.
+- **No native libraries.** The release is a single executable because every
+  dependency is managed code; SkiaSharp and SQLite were replaced for that.
+  A package with native parts either adds files beside the executable or,
+  bundled with `IncludeNativeLibrariesForSelfExtract`, is extracted to
+  `$HOME/.net` before `Main` runs, and then the program refuses to start at
+  all when `HOME` is missing or read-only. Check the `dotnet publish` output
+  before adding a package.
 - **Windows-only features.** Looking up a client's MAC address
   (`util/AddressToMacResolver.cs`) only works on Windows, so MAC restrictions
   never match elsewhere. The `.sdlna` folder's hidden attribute and the
@@ -254,8 +258,27 @@ Each of these has broken something before.
   number changes, which makes existing caches be discarded and rebuilt.
 - **`DlnaMime` values are persisted.** Append new members at the end of the
   enum; never reorder or insert.
-- **Microsoft.Data.Sqlite** requires named parameters (`@key`) and rejects a
-  parameter whose value is `null`; bind `DBNull.Value`.
+- **The cache is a LiteDB database, and LiteDB needs care** (see
+  `fsserver/FileStore.cs`):
+  - Its direct mode must not have two engines on one file, yet it lets a
+    second process open and write the same file. Servers in one process
+    share one database per file, and `FileStore.LockCache` keeps other
+    processes out; they run without a cache.
+  - The collation is stored in the file when it is created. The default is
+    the current culture, which can't be loaded under invariant
+    globalization (common in containers), so it is set to `/Ordinal`.
+  - Index keys are limited to 1023 bytes, so documents are keyed by a
+    SHA-256 of the path, and the path is stored and compared on read.
+  - The schema number is the database's `UserVersion`. Anything that isn't
+    this version's database (including SQLite caches from 2.1.x and
+    earlier) is deleted and recreated, but never a file that is merely
+    locked or read-only.
+  - While it is open, LiteDB keeps a `-log` file beside the database, and
+    the lock file sits there too. `FileStore.IsStoreFile` keeps changes to
+    all three from triggering rescans.
+- **A stored cover belongs to one version of a file.** Metadata is often
+  stored again without the cover, which loads lazily, so the stored cover is
+  kept, but only while the file's size and modification time are unchanged.
 
 ### Configuration file
 

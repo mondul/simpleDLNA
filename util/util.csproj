@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <PackageReference Include="log4net" />
-    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" />
   </ItemGroup>
 

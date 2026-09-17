@@ -210,8 +210,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
     private void OnChanged(object source, FileSystemEventArgs e)
     {
       try {
-        if (store != null &&
-            icomparer.Equals(e.FullPath, store.StoreFile.FullName)) {
+        if (store != null && store.IsStoreFile(e.FullPath, icomparer)) {
           return;
         }
         var ext = string.Empty;
@@ -521,7 +520,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
         store = new FileStore(info);
       }
       catch (Exception ex) {
-        Warn("FileStore is not available; failed to load SQLite Adapter", ex);
+        Warn($"The cache {info.FullName} is not available; running without it", ex);
         store = null;
       }
     }

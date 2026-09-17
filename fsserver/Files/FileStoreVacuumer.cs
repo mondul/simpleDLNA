@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Data;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Timers;
@@ -9,14 +7,18 @@ using NMaier.SimpleDlna.Utilities;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
+  /// <summary>
+  ///   Every half hour to four hours, removes the cache entries of files that
+  ///   no longer exist. (With SQLite it also ran VACUUM; LiteDB reuses freed
+  ///   pages instead.)
+  /// </summary>
   internal sealed class FileStoreVacuumer : Logging, IDisposable
   {
     private const int MAX_TIME = 240 * 60 * 1000;
 
     private const int MIN_TIME = 30 * 60 * 1000;
 
-    private readonly Dictionary<string, WeakReference> connections =
-      new Dictionary<string, WeakReference>();
+    private readonly List<WeakReference> stores = new List<WeakReference>();
 
     private readonly Random rnd = new Random();
 
@@ -35,29 +37,29 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
     private void Run(object sender, ElapsedEventArgs e)
     {
-      IDbConnection[] conns;
-      lock (connections) {
-        conns = (from c in connections.Values
-                 let conn = c.Target as IDbConnection
-                 where conn != null
-                 select conn).ToArray();
+      // Stores sharing a database file are purged once.
+      FileStore[] current;
+      lock (stores) {
+        current = (from s in stores
+                   let store = s.Target as FileStore
+                   where store != null
+                   group store by store.StoreFile.FullName
+                   into sameFile
+                   select sameFile.First()).ToArray();
       }
-      if (conns.Length == 0) {
-        return;
+      if (current.Length != 0) {
+        Task.Factory.StartNew(() =>
+        {
+          foreach (var store in current) {
+            try {
+              store.PurgeMissingFiles();
+            }
+            catch (Exception ex) {
+              Error("Failed to purge a store", ex);
+            }
+          }
+        }, TaskCreationOptions.LongRunning);
       }
-
-      Task.Factory.StartNew(() =>
-      {
-        foreach (var conn in conns) {
-          try {
-            Vacuum(conn);
-          }
-          catch (Exception ex) {
-            Error("Failed to vacuum a store", ex);
-          }
-        }
-      }, TaskCreationOptions.LongRunning | TaskCreationOptions.AttachedToParent);
-
       Schedule();
     }
 
@@ -65,73 +67,20 @@ namespace NMaier.SimpleDlna.FileMediaServer
     {
       timer.Interval = rnd.Next(MIN_TIME, MAX_TIME);
       timer.Enabled = true;
-      DebugFormat("Scheduling next vaccuum in {0}", timer.Interval);
+      DebugFormat("Scheduling next purge in {0}", timer.Interval);
     }
 
-    private void Vacuum(IDbConnection connection)
+    public void Add(FileStore store)
     {
-      DebugFormat("VACUUM {0}", connection.Database);
-      var files = new List<string>();
-
-      lock (connection) {
-        using (var q = connection.CreateCommand()) {
-          q.CommandText = "SELECT key FROM store";
-          using (var r = q.ExecuteReader()) {
-            while (r.Read()) {
-              files.Add(r.GetString(0));
-            }
-          }
-        }
-      }
-      var gone = from f in files
-                 let m = new FileInfo(f)
-                 where !m.Exists
-                 select f;
-      lock (connection) {
-        using (var trans = connection.BeginTransaction()) {
-          using (var q = connection.CreateCommand()) {
-            q.Transaction = trans;
-            q.CommandText = "DELETE FROM store WHERE key = @key";
-            var p = q.CreateParameter();
-            p.ParameterName = "@key";
-            p.DbType = DbType.String;
-            q.Parameters.Add(p);
-            foreach (var f in gone) {
-              p.Value = f;
-              lock (connection) {
-                q.ExecuteNonQuery();
-              }
-              DebugFormat("Purging {0}", f);
-            }
-          }
-        }
-      }
-      lock (connection) {
-        using (var q = connection.CreateCommand()) {
-          q.CommandText = "VACUUM";
-          try {
-            q.ExecuteNonQuery();
-          }
-          catch (Exception ex) {
-            Error("Failed to vacuum", ex);
-          }
-        }
-      }
-      Debug("Vacuum done!");
-    }
-
-    public void Add(IDbConnection connection)
-    {
-      lock (connections) {
-        connections[connection.ConnectionString] =
-          new WeakReference(connection);
+      lock (stores) {
+        stores.Add(new WeakReference(store));
       }
     }
 
-    public void Remove(IDbConnection connection)
+    public void Remove(FileStore store)
     {
-      lock (connections) {
-        connections.Remove(connection.ConnectionString);
+      lock (stores) {
+        stores.RemoveAll(s => s.Target == null || s.Target == store);
       }
     }
   }
