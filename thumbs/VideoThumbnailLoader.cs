@@ -4,7 +4,7 @@ using System.IO;
 using System.Threading;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
-using SkiaSharp;
+using SixLabors.ImageSharp;
 
 namespace NMaier.SimpleDlna.Thumbnails
 {
@@ -78,15 +78,18 @@ namespace NMaier.SimpleDlna.Thumbnails
           }
 
           // The pump leaves the stream at the end of what it wrote, and
-          // SKBitmap.Decode reads from the current position.
+          // decoding reads from the current position.
           thumb.Seek(0, SeekOrigin.Begin);
-          using (var img = SKBitmap.Decode(thumb)) {
-            if (img == null) {
-              throw new ArgumentException(
-                "ffmpeg did not produce a decodable image");
+          try {
+            Size fit;
+            using (var img = ThumbnailMaker.LoadImage(thumb, width, height, out fit)) {
+              return ThumbnailMaker.ResizeToJpeg(
+                img, fit, ref width, ref height, ThumbnailMakerBorder.Bordered);
             }
-            return ThumbnailMaker.ResizeToJpeg(
-              img, ref width, ref height, ThumbnailMakerBorder.Bordered);
+          }
+          catch (NotSupportedException ex) {
+            throw new ArgumentException(
+              "ffmpeg did not produce a decodable image", ex);
           }
         }
       }

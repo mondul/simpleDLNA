@@ -1,235 +1,166 @@
 ﻿using System;
-using System.Data;
-using System.Data.Common;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
+using LiteDB;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
 
 namespace NMaier.SimpleDlna.FileMediaServer
 {
+  /// <summary>
+  ///   The metadata cache: each file's serialized metadata and cover, kept in
+  ///   a LiteDB database and valid while the file's size and modification
+  ///   time are unchanged.
+  /// </summary>
+  /// <remarks>
+  ///   <para>
+  ///     LiteDB is written in C#, so the cache needs no native library beside
+  ///     the single-file executable. Each document is
+  ///     <c>{_id, path, size, time, data, cover}</c>. The id is a SHA-256 hash
+  ///     of the path rather than the path itself: LiteDB index keys are
+  ///     limited to 1023 bytes, which a deep path can exceed.
+  ///   </para>
+  ///   <para>
+  ///     LiteDB's direct mode must not have two engines on one file. Several
+  ///     servers in this process share one database per file, and a lock file
+  ///     beside it keeps other processes out; a second sdlna using the same
+  ///     cache runs without one.
+  ///   </para>
+  /// </remarks>
   internal sealed class FileStore : Logging, IDisposable
   {
-    private const uint SCHEMA = 0x20260912;
+    private const string COLLECTION = "store";
+
+    /// <summary>
+    ///   Stored as the database's UserVersion. Bump it when a cached payload
+    ///   changes (see <see cref="MediaSerializer" />): a database from another
+    ///   version is discarded and rebuilt.
+    /// </summary>
+    internal const int SCHEMA = 0x20260916;
+
+    private static readonly Dictionary<string, SharedDatabase> databases =
+      new Dictionary<string, SharedDatabase>(StringComparer.Ordinal);
 
     private static readonly FileStoreVacuumer vacuumer =
       new FileStoreVacuumer();
 
-    private static readonly object globalLock = new object();
+    private readonly SharedDatabase shared;
 
-    private readonly IDbConnection connection;
-
-    private readonly IDbCommand insert;
-
-    private readonly IDbDataParameter insertCover;
-
-    private readonly IDbDataParameter insertData;
-
-    private readonly IDbDataParameter insertKey;
-
-    private readonly IDbDataParameter insertSize;
-
-    private readonly IDbDataParameter insertTime;
-
-    private readonly IDbCommand select;
-
-    private readonly IDbCommand selectCover;
-
-    private readonly IDbDataParameter selectCoverKey;
-
-    private readonly IDbDataParameter selectCoverSize;
-
-    private readonly IDbDataParameter selectCoverTime;
-
-    private readonly IDbDataParameter selectKey;
-
-    private readonly IDbDataParameter selectSize;
-
-    private readonly IDbDataParameter selectTime;
+    private bool disposed;
 
     public readonly FileInfo StoreFile;
 
     internal FileStore(FileInfo storeFile)
     {
       StoreFile = storeFile;
-
-      OpenConnection(storeFile, out connection);
-      SetupDatabase();
-
-      select = connection.CreateCommand();
-      select.CommandText =
-        "SELECT data FROM store WHERE key = @key AND size = @size AND time = @time";
-      select.Parameters.Add(selectKey = select.CreateParameter());
-      selectKey.ParameterName = "@key";
-      selectKey.DbType = DbType.String;
-      select.Parameters.Add(selectSize = select.CreateParameter());
-      selectSize.ParameterName = "@size";
-      selectSize.DbType = DbType.Int64;
-      select.Parameters.Add(selectTime = select.CreateParameter());
-      selectTime.ParameterName = "@time";
-      selectTime.DbType = DbType.Int64;
-
-      selectCover = connection.CreateCommand();
-      selectCover.CommandText =
-        "SELECT cover FROM store WHERE key = @key AND size = @size AND time = @time";
-      selectCover.Parameters.Add(selectCoverKey = selectCover.CreateParameter());
-      selectCoverKey.ParameterName = "@key";
-      selectCoverKey.DbType = DbType.String;
-      selectCover.Parameters.Add(selectCoverSize = selectCover.CreateParameter());
-      selectCoverSize.ParameterName = "@size";
-      selectCoverSize.DbType = DbType.Int64;
-      selectCover.Parameters.Add(selectCoverTime = selectCover.CreateParameter());
-      selectCoverTime.ParameterName = "@time";
-      selectCoverTime.DbType = DbType.Int64;
-
-      insert = connection.CreateCommand();
-      insert.CommandText =
-        "INSERT OR REPLACE INTO store " +
-        "VALUES(@key, @size, @time, @data, COALESCE(@cover, (SELECT cover FROM store WHERE key = @key)))";
-      insert.Parameters.Add(insertKey = insert.CreateParameter());
-      insertKey.DbType = DbType.String;
-      insertKey.ParameterName = "@key";
-      insert.Parameters.Add(insertSize = insert.CreateParameter());
-      insertSize.DbType = DbType.Int64;
-      insertSize.ParameterName = "@size";
-      insert.Parameters.Add(insertTime = insert.CreateParameter());
-      insertTime.DbType = DbType.Int64;
-      insertTime.ParameterName = "@time";
-      insert.Parameters.Add(insertData = insert.CreateParameter());
-      insertData.DbType = DbType.Binary;
-      insertData.ParameterName = "@data";
-      insert.Parameters.Add(insertCover = insert.CreateParameter());
-      insertCover.DbType = DbType.Binary;
-      insertCover.ParameterName = "@cover";
-
+      shared = SharedDatabase.Acquire(storeFile, this);
       InfoFormat("FileStore at {0} is ready", storeFile.FullName);
-
-      vacuumer.Add(connection);
+      vacuumer.Add(this);
     }
 
     public void Dispose()
     {
-      insert?.Dispose();
-      @select?.Dispose();
-      if (connection != null) {
-        vacuumer.Remove(connection);
-        Sqlite.ClearPool(connection);
-        connection.Dispose();
+      if (disposed) {
+        return;
       }
+      disposed = true;
+      vacuumer.Remove(this);
+      shared.Release();
     }
 
-    private void OpenConnection(FileInfo storeFile,
-      out IDbConnection newConnection)
+    /// <summary>
+    ///   LiteDB's write-ahead log, kept beside the database while it is open.
+    /// </summary>
+    internal static string LogFileOf(FileInfo storeFile)
     {
-      lock (globalLock) {
-        newConnection = Sqlite.GetDatabaseConnection(storeFile);
-        try {
-          using (var ver = newConnection.CreateCommand()) {
-            ver.CommandText = "PRAGMA user_version";
-            var currentVersion = (uint)(long)ver.ExecuteScalar();
-            if (!currentVersion.Equals(SCHEMA)) {
-              throw new IndexOutOfRangeException("SCHEMA");
-            }
-          }
-        }
-        catch (Exception ex) {
-          NoticeFormat(
-            "Recreating database, schema update. ({0})",
-            ex.Message
-            );
-          Sqlite.ClearPool(newConnection);
-          newConnection.Close();
-          newConnection.Dispose();
-          newConnection = null;
-          for (var i = 0; i < 10; ++i) {
-            try {
-              GC.Collect();
-              storeFile.Delete();
-              break;
-            }
-            catch (IOException) {
-              Thread.Sleep(100);
-            }
-          }
-          newConnection = Sqlite.GetDatabaseConnection(storeFile);
-        }
-        using (var pragma = connection.CreateCommand()) {
-          pragma.CommandText = "PRAGMA journal_size_limt = 33554432";
-          pragma.ExecuteNonQuery();
-        }
-      }
+      return Path.Combine(
+        storeFile.DirectoryName ?? string.Empty,
+        Path.GetFileNameWithoutExtension(storeFile.Name) + "-log" + storeFile.Extension);
     }
 
-    private void SetupDatabase()
+    internal static string LockFileOf(FileInfo storeFile)
     {
-      using (var transaction = connection.BeginTransaction()) {
-        using (var pragma = connection.CreateCommand()) {
-          pragma.CommandText = $"PRAGMA user_version = {SCHEMA}";
-          pragma.ExecuteNonQuery();
-          pragma.CommandText = "PRAGMA page_size = 8192";
-          pragma.ExecuteNonQuery();
-        }
-        using (var create = connection.CreateCommand()) {
-          create.CommandText =
-            "CREATE TABLE IF NOT EXISTS store (key TEXT PRIMARY KEY ON CONFLICT REPLACE, size INT, time INT, data BINARY, cover BINARY)";
-          create.ExecuteNonQuery();
-        }
-        transaction.Commit();
+      return storeFile.FullName + ".lock";
+    }
+
+    /// <summary>
+    ///   Takes the lock that keeps other processes out of the database, held
+    ///   for as long as it is open.
+    /// </summary>
+    /// <exception cref="IOException">Another process holds it.</exception>
+    internal static FileStream LockCache(FileInfo storeFile)
+    {
+      return new FileStream(
+        LockFileOf(storeFile), FileMode.OpenOrCreate, FileAccess.ReadWrite,
+        FileShare.None, 1, FileOptions.DeleteOnClose);
+    }
+
+    /// <summary>
+    ///   Whether <paramref name="path" /> is one of the files the cache keeps,
+    ///   so that a cache inside a served folder does not trigger rescans.
+    /// </summary>
+    internal bool IsStoreFile(string path, StringComparer comparer)
+    {
+      return comparer.Equals(path, StoreFile.FullName) ||
+             comparer.Equals(path, LogFileOf(StoreFile)) ||
+             comparer.Equals(path, LockFileOf(StoreFile));
+    }
+
+    private static string KeyOf(string path)
+    {
+      return Convert.ToHexStringLower(
+        SHA256.HashData(Encoding.UTF8.GetBytes(path)));
+    }
+
+    /// <summary>
+    ///   The entry for <paramref name="info" />, if it was stored for this
+    ///   version of the file.
+    /// </summary>
+    private BsonDocument Find(FileInfo info, string operation)
+    {
+      if (disposed) {
+        return null;
       }
+      BsonDocument doc;
+      try {
+        doc = shared.Collection.FindById(KeyOf(info.FullName));
+      }
+      catch (Exception ex) when (ex is LiteException || ex is IOException) {
+        Error($"Failed to look up {operation} in the store", ex);
+        return null;
+      }
+      return IsCurrent(doc, info) ? doc : null;
+    }
+
+    private static bool IsCurrent(BsonDocument doc, FileInfo info)
+    {
+      return doc != null &&
+             doc["path"].IsString && doc["path"].AsString == info.FullName &&
+             doc["size"].IsInt64 && doc["size"].AsInt64 == info.Length &&
+             doc["time"].IsInt64 &&
+             doc["time"].AsInt64 == info.LastWriteTimeUtc.Ticks;
     }
 
     internal bool HasCover(BaseFile file)
     {
-      if (connection == null) {
-        return false;
-      }
-
-      var info = file.Item;
-      lock (connection) {
-        selectCoverKey.Value = info.FullName;
-        selectCoverSize.Value = info.Length;
-        selectCoverTime.Value = info.LastWriteTimeUtc.Ticks;
-        try {
-          var data = selectCover.ExecuteScalar();
-          return data is byte[];
-        }
-        catch (DbException ex) {
-          Error("Failed to lookup file cover existence from store", ex);
-          return false;
-        }
-      }
+      var doc = Find(file.Item, "a file cover's existence");
+      return doc != null && doc["cover"].IsBinary;
     }
 
     internal Cover MaybeGetCover(BaseFile file)
     {
-      if (connection == null) {
-        return null;
-      }
-
       var info = file.Item;
-      byte[] data;
-      lock (connection) {
-        try {
-          selectCoverKey.Value = info.FullName;
-          selectCoverSize.Value = info.Length;
-          selectCoverTime.Value = info.LastWriteTimeUtc.Ticks;
-          try {
-            data = selectCover.ExecuteScalar() as byte[];
-          }
-          catch (DbException ex) {
-            Error("Failed to lookup file cover from store", ex);
-            return null;
-          }
-        }
-        finally {
-          selectCover.Cancel();
-        }
-      }
-      if (data == null) {
+      var doc = Find(info, "a file cover");
+      if (doc == null || !doc["cover"].IsBinary) {
         return null;
       }
       try {
-        using (var s = new MemoryStream(data)) {
+        using (var s = new MemoryStream(doc["cover"].AsBinary)) {
           return MediaSerializer.DeserializeCover(
             s, new DeserializeInfo(null, info, DlnaMime.ImageJPEG));
         }
@@ -248,32 +179,12 @@ namespace NMaier.SimpleDlna.FileMediaServer
     internal BaseFile MaybeGetFile(FileServer server, FileInfo info,
       DlnaMime type)
     {
-      if (connection == null) {
-        return null;
-      }
-      byte[] data;
-      lock (connection) {
-        try {
-          selectKey.Value = info.FullName;
-          selectSize.Value = info.Length;
-          selectTime.Value = info.LastWriteTimeUtc.Ticks;
-          try {
-            data = select.ExecuteScalar() as byte[];
-          }
-          catch (DbException ex) {
-            Error("Failed to lookup file from store", ex);
-            return null;
-          }
-        }
-        finally {
-          select.Cancel();
-        }
-      }
-      if (data == null) {
+      var doc = Find(info, "a file");
+      if (doc == null || !doc["data"].IsBinary) {
         return null;
       }
       try {
-        using (var s = new MemoryStream(data)) {
+        using (var s = new MemoryStream(doc["data"].AsBinary)) {
           var rv = MediaSerializer.DeserializeFile(
             s, new DeserializeInfo(server, info, type));
           rv.Item = info;
@@ -289,7 +200,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
 
     internal void MaybeStoreFile(BaseFile file)
     {
-      if (connection == null) {
+      if (disposed) {
         return;
       }
       if (!MediaSerializer.CanSerialize(file)) {
@@ -307,34 +218,43 @@ namespace NMaier.SimpleDlna.FileMediaServer
               }
             }
             catch (NotSupportedException) {
-              // Ignore and store null. Clearing the local is what makes the
-              // "store null" actually happen: the insert below keys off it,
-              // and a throw part way through SerializeCover would otherwise
-              // persist a truncated cover blob.
+              // Ignore and store no cover. Clearing the local is what makes
+              // that happen: a throw part way through SerializeCover would
+              // otherwise persist a truncated cover blob.
               cover = null;
             }
 
-            lock (connection) {
-              using (var trans = connection.BeginTransaction()) {
-                insertKey.Value = file.Item.FullName;
-                insertSize.Value = file.Item.Length;
-                insertTime.Value = file.Item.LastWriteTimeUtc.Ticks;
-                insertData.Value = s.ToArray();
-
-                // Microsoft.Data.Sqlite rejects an unset parameter value, so
-                // an absent cover has to be bound as DBNull rather than null.
-                insertCover.Value = DBNull.Value;
-                if (cover != null) {
-                  insertCover.Value = c.ToArray();
+            var info = file.Item;
+            var key = KeyOf(info.FullName);
+            // Read, merge and write as one step, for servers sharing this
+            // database.
+            lock (shared) {
+              try {
+                var coverValue = cover != null
+                  ? new BsonValue(c.ToArray())
+                  : BsonValue.Null;
+                if (cover == null) {
+                  // Metadata is often stored again without the cover, which
+                  // loads lazily and may since have been collected. Keep the
+                  // stored one, but only for this version of the file: a
+                  // changed file needs a new cover.
+                  var existing = shared.Collection.FindById(key);
+                  if (IsCurrent(existing, info) && existing["cover"].IsBinary) {
+                    coverValue = existing["cover"];
+                  }
                 }
-                try {
-                  insert.Transaction = trans;
-                  insert.ExecuteNonQuery();
-                  trans.Commit();
-                }
-                catch (DbException ex) {
-                  Error("Failed to put file cover into store", ex);
-                }
+                shared.Collection.Upsert(new BsonDocument
+                {
+                  ["_id"] = key,
+                  ["path"] = info.FullName,
+                  ["size"] = info.Length,
+                  ["time"] = info.LastWriteTimeUtc.Ticks,
+                  ["data"] = s.ToArray(),
+                  ["cover"] = coverValue
+                });
+              }
+              catch (Exception ex) when (ex is LiteException || ex is IOException) {
+                Error("Failed to put a file into the store", ex);
               }
             }
           }
@@ -343,6 +263,163 @@ namespace NMaier.SimpleDlna.FileMediaServer
       catch (Exception ex) {
         Error("Failed to serialize an object of type " + file.GetType(), ex);
         throw;
+      }
+    }
+
+    /// <summary>
+    ///   Removes the entries of files that no longer exist.
+    /// </summary>
+    internal void PurgeMissingFiles()
+    {
+      if (disposed) {
+        return;
+      }
+      List<BsonDocument> entries;
+      lock (shared) {
+        entries = shared.Collection.Query()
+          .Select("{_id, path}")
+          .ToList();
+      }
+      var gone = entries
+        .Where(e => !e["path"].IsString || !File.Exists(e["path"].AsString))
+        .ToList();
+      foreach (var entry in gone) {
+        lock (shared) {
+          shared.Collection.Delete(entry["_id"]);
+        }
+        DebugFormat("Purged {0}", entry["path"]);
+      }
+      DebugFormat("Purged {0} of {1} entries", gone.Count, entries.Count);
+    }
+
+    /// <summary>
+    ///   One open database, shared by every FileStore on the same file.
+    /// </summary>
+    private sealed class SharedDatabase
+    {
+      private LiteDatabase database;
+
+      private FileStream lockFile;
+
+      private string path;
+
+      private int references;
+
+      public ILiteCollection<BsonDocument> Collection { get; private set; }
+
+      public static SharedDatabase Acquire(FileInfo storeFile, Logging log)
+      {
+        var path = storeFile.FullName;
+        lock (databases) {
+          SharedDatabase rv;
+          if (databases.TryGetValue(path, out rv)) {
+            rv.references++;
+            return rv;
+          }
+          // A second process gets an IOException here and runs without the
+          // cache.
+          var lockFile = LockCache(storeFile);
+          try {
+            var database = Open(storeFile, log);
+            rv = new SharedDatabase
+            {
+              database = database,
+              lockFile = lockFile,
+              path = path,
+              references = 1,
+              Collection = database.GetCollection(COLLECTION)
+            };
+            databases.Add(path, rv);
+            return rv;
+          }
+          catch (Exception) {
+            lockFile.Dispose();
+            throw;
+          }
+        }
+      }
+
+      public void Release()
+      {
+        lock (databases) {
+          if (--references != 0) {
+            return;
+          }
+          databases.Remove(path);
+          database.Dispose();
+          lockFile.Dispose();
+        }
+      }
+
+      private static LiteDatabase Connect(FileInfo storeFile)
+      {
+        return new LiteDatabase(new ConnectionString
+        {
+          Filename = storeFile.FullName,
+          Connection = ConnectionType.Direct,
+          // Stored in the file when it is created. The default, the current
+          // culture, cannot be loaded under invariant globalization (common in
+          // containers), which would make the file unreadable there.
+          Collation = new Collation("/Ordinal"),
+          Upgrade = false
+        });
+      }
+
+      private static LiteDatabase Open(FileInfo storeFile, Logging log)
+      {
+        try {
+          var database = Connect(storeFile);
+          try {
+            if (database.UserVersion == SCHEMA) {
+              return database;
+            }
+            if (database.UserVersion == 0 &&
+                !database.GetCollectionNames().Any()) {
+              database.UserVersion = SCHEMA;
+              return database;
+            }
+            throw new InvalidDataException(string.Format(
+              CultureInfo.InvariantCulture,
+              "schema {0:X} instead of {1:X}", database.UserVersion, SCHEMA));
+          }
+          catch (Exception) {
+            database.Dispose();
+            throw;
+          }
+        }
+        catch (Exception ex) when (
+          ex is LiteException || ex is InvalidDataException ||
+          ex is CultureNotFoundException) {
+          // Another version's cache (including the SQLite caches of earlier
+          // releases) or a damaged one: it is only a cache, so start over.
+          log.NoticeFormat("Recreating the cache database. ({0})", ex.Message);
+          Delete(storeFile);
+          var database = Connect(storeFile);
+          database.UserVersion = SCHEMA;
+          return database;
+        }
+      }
+
+      /// <summary>
+      ///   Deletes the database with its LiteDB log, and the journals SQLite
+      ///   kept beside the caches of earlier releases.
+      /// </summary>
+      private static void Delete(FileInfo storeFile)
+      {
+        var path = storeFile.FullName;
+        foreach (var file in new[] {
+          path, LogFileOf(storeFile), path + "-journal", path + "-wal", path + "-shm"
+        }) {
+          for (var i = 0; i < 10; ++i) {
+            try {
+              File.Delete(file);
+              break;
+            }
+            catch (IOException) {
+              Thread.Sleep(100);
+            }
+          }
+        }
       }
     }
   }

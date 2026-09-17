@@ -163,7 +163,7 @@ It is created by the first `sdlna --server add`. A complete example:
 | Key | Meaning | Default |
 |---|---|---|
 | `port` | HTTP port; `0` picks any free port each run. Clients find the server either way, but a fixed port keeps its web page at a stable address. | `0` |
-| `cache` | File that stores media metadata and thumbnails, so restarts don't rescan every file. `"none"` turns it off. A leading `~` means your home folder. If missing or empty, the default is used. | `~/.sdlna/cache.db` |
+| `cache` | File that stores media metadata and thumbnails, so restarts don't rescan every file. `"none"` turns it off. A leading `~` means your home folder. If missing or empty, the default is used. Only one `sdlna` process can use a cache file at a time; another one runs without it. | `~/.sdlna/cache.db` |
 | `editor` | Command that `--edit` opens the file with. | `notepad` on Windows, `nano` elsewhere |
 
 **Per server**
@@ -420,10 +420,10 @@ Project layout
 
 | Project    | Output                        | Role                                                        |
 |------------|-------------------------------|-------------------------------------------------------------|
-| `util`     | `SimpleDlna.Utilities`        | SQLite access, ffmpeg invocation, stream pumps, sorting      |
+| `util`     | `SimpleDlna.Utilities`        | ffmpeg invocation, stream pumps, sorting                     |
 | `server`   | `SimpleDlna.Server`           | HTTP and SSDP servers, UPnP/DLNA handlers, views, comparers  |
-| `thumbs`   | `SimpleDlna.Thumbnails`       | Thumbnail generation                                         |
-| `fsserver` | `SimpleDlna.FileMediaServer`  | Filesystem media source and its metadata cache               |
+| `thumbs`   | `SimpleDlna.Thumbnails`       | Thumbnail generation (ImageSharp)                            |
+| `fsserver` | `SimpleDlna.FileMediaServer`  | Filesystem media source and its metadata cache (LiteDB)      |
 | `sdlna`    | `sdlna`                       | Console entry point and configuration file                   |
 | `tests`    | `SimpleDlna.Tests`            | Test suite                                                   |
 

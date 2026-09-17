@@ -6,13 +6,31 @@ using System.Reflection;
 using log4net;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Utilities;
-using SkiaSharp;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace NMaier.SimpleDlna.Thumbnails
 {
   public sealed class ThumbnailMaker : Logging
   {
     private const int JPEG_QUALITY = 85;
+
+    private static readonly JpegEncoder jpegEncoder = new JpegEncoder
+    {
+      Quality = JPEG_QUALITY
+    };
+
+    /// <summary>
+    ///   Only the first frame of an animated image is ever shown, so the rest
+    ///   are not decoded.
+    /// </summary>
+    private static readonly DecoderOptions decoderOptions = new DecoderOptions
+    {
+      MaxFrames = 1
+    };
 
     private static readonly LeastRecentlyUsedDictionary<string, CacheItem> cache =
       new LeastRecentlyUsedDictionary<string, CacheItem>(1 << 11);
@@ -102,11 +120,17 @@ namespace NMaier.SimpleDlna.Thumbnails
       throw new ArgumentException("Not a supported resource");
     }
 
-    internal static SKBitmap ResizeImage(SKBitmap image, int width, int height,
-      ThumbnailMakerBorder border)
+    /// <summary>
+    ///   The size a <paramref name="sourceWidth" /> by
+    ///   <paramref name="sourceHeight" /> image is shown at to fit within
+    ///   <paramref name="width" /> by <paramref name="height" />, keeping its
+    ///   aspect ratio and never enlarging it.
+    /// </summary>
+    internal static Size FitWithin(int sourceWidth, int sourceHeight,
+      int width, int height)
     {
-      var nw = (float)image.Width;
-      var nh = (float)image.Height;
+      var nw = (float)sourceWidth;
+      var nh = (float)sourceHeight;
       if (nw > width) {
         nh = width * nh / nw;
         nw = width;
@@ -115,29 +139,78 @@ namespace NMaier.SimpleDlna.Thumbnails
         nw = height * nw / nh;
         nh = height;
       }
-
       // A source with an extreme aspect ratio can scale to zero on one axis,
-      // which is not a valid bitmap size.
-      var rw = border == ThumbnailMakerBorder.Bordered
-        ? width
-        : Math.Max((int)nw, 1);
-      var rh = border == ThumbnailMakerBorder.Bordered
-        ? height
-        : Math.Max((int)nh, 1);
+      // which is not a valid image size.
+      return new Size(Math.Max((int)nw, 1), Math.Max((int)nh, 1));
+    }
 
-      var result = new SKBitmap(rw, rh, SKColorType.Rgba8888, SKAlphaType.Premul);
+    /// <summary>
+    ///   Decodes the first frame of an image, in any format ImageSharp reads,
+    ///   for a thumbnail of at most <paramref name="width" /> by
+    ///   <paramref name="height" />.
+    /// </summary>
+    /// <param name="fit">
+    ///   The size to show the image at; see <see cref="FitWithin" />.
+    /// </param>
+    /// <exception cref="NotSupportedException">
+    ///   The data is not an image, or is damaged.
+    /// </exception>
+    internal static Image LoadImage(Stream stream, int width, int height,
+      out Size fit)
+    {
       try {
-        // Mitchell cubic when enlarging, cheap linear filtering when shrinking,
-        // matching the quality/speed split the GDI+ implementation used.
-        var sampling = rw > image.Width && rh > image.Height
-          ? new SKSamplingOptions(SKCubicResampler.Mitchell)
-          : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
-        using (var canvas = new SKCanvas(result)) {
-          canvas.Clear(SKColors.Black);
-          using (var img = SKImage.FromBitmap(image)) {
-            var rect = SKRect.Create(
-              (rw - nw) / 2f, (rh - nh) / 2f, nw, nh);
-            canvas.DrawImage(img, rect, sampling);
+        if (!stream.CanSeek) {
+          var whole = Image.Load(decoderOptions, stream);
+          fit = FitWithin(whole.Width, whole.Height, width, height);
+          return whole;
+        }
+        var start = stream.Position;
+        var info = Image.Identify(decoderOptions, stream);
+        stream.Position = start;
+        fit = FitWithin(info.Width, info.Height, width, height);
+        var options = decoderOptions;
+        if (fit.Width < info.Width || fit.Height < info.Height) {
+          // JPEGs are then decoded at a reduced scale, which makes a photo's
+          // thumbnail several times faster. TargetSize would also enlarge a
+          // smaller image, hence only when shrinking.
+          options = new DecoderOptions
+          {
+            MaxFrames = decoderOptions.MaxFrames,
+            TargetSize = fit
+          };
+        }
+        return Image.Load(options, stream);
+      }
+      catch (Exception ex) when (
+        ex is ImageFormatException || ex is InvalidImageContentException) {
+        throw new NotSupportedException("Not a supported image", ex);
+      }
+    }
+
+    /// <summary>
+    ///   Scales <paramref name="image" /> to <paramref name="fit" /> and
+    ///   flattens it onto black. Bordered results are letterboxed to exactly
+    ///   <paramref name="width" /> by <paramref name="height" />.
+    /// </summary>
+    internal static Image<Rgb24> ResizeImage(Image image, Size fit, int width,
+      int height, ThumbnailMakerBorder border)
+    {
+      var rw = border == ThumbnailMakerBorder.Bordered ? width : fit.Width;
+      var rh = border == ThumbnailMakerBorder.Bordered ? height : fit.Height;
+      var at = new Point((rw - fit.Width) / 2, (rh - fit.Height) / 2);
+
+      // Drawing onto an opaque black canvas, rather than encoding the scaled
+      // image directly, gives transparent areas a defined colour: JPEG has no
+      // alpha channel.
+      var result = new Image<Rgb24>(rw, rh, new Rgb24(0, 0, 0));
+      try {
+        if (image.Size == fit) {
+          result.Mutate(c => c.DrawImage(image, at, 1f));
+        }
+        else {
+          using (var scaled = image.Clone(
+            c => c.Resize(fit.Width, fit.Height, KnownResamplers.Bicubic))) {
+            result.Mutate(c => c.DrawImage(scaled, at, 1f));
           }
         }
         return result;
@@ -149,27 +222,19 @@ namespace NMaier.SimpleDlna.Thumbnails
     }
 
     /// <summary>
-    ///   Scales <paramref name="image" /> to fit and encodes the result as
-    ///   JPEG, reporting the dimensions actually produced.
+    ///   Scales <paramref name="image" /> to <paramref name="fit" /> and
+    ///   encodes the result as JPEG, reporting the dimensions actually
+    ///   produced.
     /// </summary>
-    internal static MemoryStream ResizeToJpeg(SKBitmap image, ref int width,
-      ref int height, ThumbnailMakerBorder border)
+    internal static MemoryStream ResizeToJpeg(Image image, Size fit,
+      ref int width, ref int height, ThumbnailMakerBorder border)
     {
-      using (var scaled = ResizeImage(image, width, height, border)) {
+      using (var scaled = ResizeImage(image, fit, width, height, border)) {
         width = scaled.Width;
         height = scaled.Height;
         var rv = new MemoryStream();
         try {
-          using (var img = SKImage.FromBitmap(scaled)) {
-            using (var data = img.Encode(
-              SKEncodedImageFormat.Jpeg, JPEG_QUALITY)) {
-              if (data == null) {
-                throw new NotSupportedException(
-                  "Failed to encode the thumbnail as JPEG");
-              }
-              data.SaveTo(rv);
-            }
-          }
+          scaled.SaveAsJpeg(rv, jpegEncoder);
           return rv;
         }
         catch (Exception) {

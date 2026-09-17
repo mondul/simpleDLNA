@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="LiteDB" />
     <PackageReference Include="log4net" />
     <PackageReference Include="TagLibSharp" />
   </ItemGroup>

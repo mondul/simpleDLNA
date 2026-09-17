@@ -201,6 +201,7 @@ namespace NMaier.SimpleDlna
 
         using (new ProgramIcon()) {
           var server = new HttpServer(options.Port);
+          var fileServers = new List<FileServer>();
           try {
             using (var authorizer = new HttpAuthorizer(server)) {
               if (options.Ips.Length != 0) {
@@ -229,6 +230,7 @@ namespace NMaier.SimpleDlna
                   server.InfoFormat("Mounting FileServer for {0}", d.FullName);
                   var fs = SetupFileServer(
                     options, types, new[] {d});
+                  fileServers.Add(fs);
                   friendlyName = fs.FriendlyName;
                   server.RegisterMediaServer(fs);
                   server.NoticeFormat("{0} mounted", d.FullName);
@@ -239,6 +241,7 @@ namespace NMaier.SimpleDlna
                   "Mounting FileServer for {0} ({1})",
                   options.Directories[0], options.Directories.Length);
                 var fs = SetupFileServer(options, types, options.Directories);
+                fileServers.Add(fs);
                 friendlyName = fs.FriendlyName;
                 server.RegisterMediaServer(fs);
                 server.NoticeFormat(
@@ -253,6 +256,7 @@ namespace NMaier.SimpleDlna
           }
           finally {
             server.Dispose();
+            DisposeAll(fileServers);
           }
         }
       }
@@ -314,6 +318,23 @@ namespace NMaier.SimpleDlna
       warnings.WriteLine("  sdlna --server add <name> <folder>");
       warnings.WriteLine("See 'sdlna --server help' for more.");
       warnings.WriteLine();
+    }
+
+    /// <summary>
+    ///   HttpServer only unregisters its media servers. Disposing them closes
+    ///   their caches, which checkpoints the database and releases its lock.
+    /// </summary>
+    private static void DisposeAll(IEnumerable<FileServer> fileServers)
+    {
+      foreach (var fs in fileServers) {
+        try {
+          fs.Dispose();
+        }
+        catch (Exception ex) {
+          LogManager.GetLogger(typeof (Program)).Warn(
+            $"Failed to shut down {fs.FriendlyName}", ex);
+        }
+      }
     }
 
     private static void Run(HttpServer server)
@@ -388,6 +409,7 @@ namespace NMaier.SimpleDlna
 
       using (new ProgramIcon()) {
         var httpServer = new HttpServer(port);
+        var fileServers = new List<FileServer>();
         try {
           Console.Title = "SimpleDLNA - starting ...";
           var mounted = 0;
@@ -395,6 +417,7 @@ namespace NMaier.SimpleDlna
             try {
               httpServer.InfoFormat("Mounting server {0}", server.Name);
               var fs = SetupConfiguredServer(server, cacheFile, options.Rescanning, httpServer);
+              fileServers.Add(fs);
               httpServer.RegisterMediaServer(fs);
               ++mounted;
               httpServer.NoticeFormat("{0} mounted", server.Name);
@@ -415,6 +438,7 @@ namespace NMaier.SimpleDlna
         }
         finally {
           httpServer.Dispose();
+          DisposeAll(fileServers);
         }
       }
     }

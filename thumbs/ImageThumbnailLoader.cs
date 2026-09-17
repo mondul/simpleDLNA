@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using NMaier.SimpleDlna.Server;
-using SkiaSharp;
+using SixLabors.ImageSharp;
 
 namespace NMaier.SimpleDlna.Thumbnails
 {
@@ -12,28 +12,24 @@ namespace NMaier.SimpleDlna.Thumbnails
     public MemoryStream GetThumbnail(object item, ref int width,
       ref int height)
     {
-      SKBitmap img;
+      Image img;
+      Size fit;
       var stream = item as Stream;
       if (stream != null) {
-        img = SKBitmap.Decode(stream);
+        img = ThumbnailMaker.LoadImage(stream, width, height, out fit);
       }
       else {
         var fi = item as FileInfo;
-        if (fi != null) {
-          img = SKBitmap.Decode(fi.FullName);
-        }
-        else {
+        if (fi == null) {
           throw new NotSupportedException();
         }
-      }
-      // Unlike Image.FromStream, SKBitmap.Decode reports failure by returning
-      // null rather than throwing.
-      if (img == null) {
-        throw new NotSupportedException("Not a supported image format");
+        using (var file = fi.OpenRead()) {
+          img = ThumbnailMaker.LoadImage(file, width, height, out fit);
+        }
       }
       using (img) {
         return ThumbnailMaker.ResizeToJpeg(
-          img, ref width, ref height, ThumbnailMakerBorder.Borderless);
+          img, fit, ref width, ref height, ThumbnailMakerBorder.Borderless);
       }
     }
   }
