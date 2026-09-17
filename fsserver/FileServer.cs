@@ -173,12 +173,17 @@ namespace NMaier.SimpleDlna.FileMediaServer
         var info = new FileInfo(fullPath);
         var item = ids.GetItemByPath(info.FullName) as IMediaResource;
         var folder = ids.GetItemByPath(info.Directory?.FullName) as PlainFolder;
-        if (item != null) {
-          DebugFormat("Did find an existing {0}", info.FullName);
-        }
         if (folder == null) {
           DebugFormat("Did not find folder for {0}", info.Directory?.FullName);
           return false;
+        }
+        if (item != null) {
+          // The file is listed already: replaced in place, or reported by the
+          // watcher although the scan found it (on macOS a new watcher reports
+          // files created just before it started). Replace the entry; adding
+          // another listed the file twice.
+          DebugFormat("Replacing the existing {0}", info.FullName);
+          folder.RemoveResource(item);
         }
         item = GetFile(folder, info);
         if (item == null) {
@@ -207,7 +212,7 @@ namespace NMaier.SimpleDlna.FileMediaServer
       }
     }
 
-    private void OnChanged(object source, FileSystemEventArgs e)
+    internal void OnChanged(object source, FileSystemEventArgs e)
     {
       try {
         if (store != null && store.IsStoreFile(e.FullPath, icomparer)) {
