@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
@@ -30,6 +31,28 @@ namespace NMaier.SimpleDlna.Utilities
       maybeBoolean = maybeBoolean.Trim();
       var sc = StringComparer.CurrentCultureIgnoreCase;
       return sc.Equals("yes", maybeBoolean) || sc.Equals("1", maybeBoolean) || sc.Equals("true", maybeBoolean);
+    }
+
+    /// <summary>
+    ///   Formats a media duration as UPnP ContentDirectory requires for
+    ///   res@duration: H+:MM:SS.FFF, total hours first. TimeSpan's own formats
+    ///   don't fit: "g" writes the current culture's decimal separator (a
+    ///   comma on an es-CO machine, "0:00:02,366"), and it and "c" both put
+    ///   the days in front once a duration reaches 24 hours.
+    /// </summary>
+    public static string FormatDuration(this TimeSpan duration)
+    {
+      if (duration < TimeSpan.Zero) {
+        throw new ArgumentOutOfRangeException(
+          nameof(duration), duration, "Durations cannot be negative");
+      }
+      return string.Format(
+        CultureInfo.InvariantCulture,
+        "{0}:{1:D2}:{2:D2}.{3:D3}",
+        duration.Ticks / TimeSpan.TicksPerHour,
+        duration.Minutes,
+        duration.Seconds,
+        duration.Milliseconds);
     }
 
     public static string FormatFileSize(this long size)

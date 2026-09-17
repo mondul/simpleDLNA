@@ -1,8 +1,10 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using NMaier.SimpleDlna.FileMediaServer;
 using NMaier.SimpleDlna.Server;
 using NMaier.SimpleDlna.Tests.Support;
@@ -305,9 +307,37 @@ namespace NMaier.SimpleDlna.Tests
       var (_, items, _) = DlnaClient.Browse("127.0.0.1", server.Port, prefix);
 
       var item = Assert.Single(items);
-      var duration = TimeSpan.Parse(item.Duration);
+      Assert.Matches(@"^\d+:\d\d:\d\d\.\d{3}$", item.Duration);
+      var duration = TimeSpan.Parse(item.Duration, CultureInfo.InvariantCulture);
       Assert.InRange(duration.TotalSeconds, 2.5, 3.5);
       Assert.True(TestMedia.IsJpeg(DlnaClient.GetBytes(item.CoverUrl)));
+    }
+
+    /// <summary>
+    ///   Regression: res@duration was formatted with the machine's culture, so
+    ///   on an es-CO machine a 2.366 s song was announced as
+    ///   duration="0:00:02,366". The HTML index shows the same text.
+    /// </summary>
+    [Fact]
+    public void DurationIsSentWithADecimalPointInAnyCulture()
+    {
+      media.WriteFile("song.mp3");
+      var fileServer = TestFileServer.Create(media.Info);
+      var prefix = server.Mount(fileServer);
+      var root = Assert.IsAssignableFrom<IMediaFolder>(fileServer.GetItem(Identifiers.GENERAL_ROOT));
+      Assert.IsType<AudioFile>(Assert.Single(root.ChildItems))
+        .Set("duration", (TimeSpan?)TimeSpan.FromMilliseconds(2366))
+        .Set("initialized", true);
+
+      // Responses are built on the server's threads, not this one.
+      using (CultureScope.CommaDecimals(processWide: true)) {
+        var (_, items, _) = DlnaClient.Browse("127.0.0.1", server.Port, prefix);
+        var html = Encoding.UTF8.GetString(
+          DlnaClient.GetBytes($"http://127.0.0.1:{server.Port}{prefix}index/{Identifiers.GENERAL_ROOT}"));
+
+        Assert.Equal("0:00:02.366", Assert.Single(items).Duration);
+        Assert.Contains("<td>0:00:02.366</td>", html);
+      }
     }
   }
 }
