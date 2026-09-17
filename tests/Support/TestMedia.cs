@@ -70,6 +70,37 @@ namespace NMaier.SimpleDlna.Tests.Support
              data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF;
     }
 
+    /// <summary>
+    ///   Half a second of silent MP3 frames, written by hand so that no
+    ///   encoder is needed, with an ID3v2 tag holding <paramref name="art" />
+    ///   as the front cover.
+    /// </summary>
+    public static FileInfo WriteMp3WithArt(string path, byte[] art)
+    {
+      // MPEG-1 Layer III, 128 kbit/s, 44.1 kHz: 417 bytes a frame.
+      var frame = new byte[417];
+      frame[0] = 0xFF;
+      frame[1] = 0xFB;
+      frame[2] = 0x90;
+      using (var stream = File.Create(path)) {
+        for (var i = 0; i < 20; i++) {
+          stream.Write(frame);
+        }
+      }
+      using (var file = TagLib.File.Create(path)) {
+        file.GetTag(TagLib.TagTypes.Id3v2, true).Pictures = new TagLib.IPicture[]
+        {
+          new TagLib.Picture(new TagLib.ByteVector(art))
+          {
+            Type = TagLib.PictureType.FrontCover,
+            MimeType = "image/jpeg"
+          }
+        };
+        file.Save();
+      }
+      return new FileInfo(path);
+    }
+
     public static bool HasFFmpeg => FFmpeg.FFmpegExecutable != null;
 
     /// <summary>

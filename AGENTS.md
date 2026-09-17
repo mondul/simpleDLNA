@@ -253,6 +253,12 @@ Each of these has broken something before.
   header exactly, including case.
 - **Audio-only servers get the `music` view.** `FileServer.Load` adds it when
   the server serves only audio and has no views.
+- **A listed cover must exist, or be a 404.** Clients fetch every
+  `albumArtURI` they are given. An item whose `Cover` is null (audio without
+  embedded art) gets no cover links. Other covers are thumbnails made when
+  first fetched, so a Browse can list one that can't be made; the cover
+  handler answers 404 when a cover has no `InfoSize`. Both cases used to end
+  in a 500.
 
 ### Persistence
 

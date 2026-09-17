@@ -233,6 +233,68 @@ namespace NMaier.SimpleDlna.Tests
       Assert.True(TestMedia.IsJpeg(DlnaClient.GetBytes(Assert.Single(items).CoverUrl)));
     }
 
+    private HttpStatusCode CoverStatus(string prefix, BrowsedItem item)
+    {
+      using (var response = DlnaClient.Get($"http://127.0.0.1:{server.Port}{prefix}cover/{item.Id}/i.jpg")) {
+        return response.StatusCode;
+      }
+    }
+
+    /// <summary>
+    ///   Regression: an audio file without embedded art was listed with an
+    ///   albumArtURI and an icon all the same, and fetching them failed with
+    ///   a 500. The item has no cover, so there is nothing to link to, and a
+    ///   link a client kept from elsewhere is not found.
+    /// </summary>
+    [Fact]
+    public void AudioWithoutArtHasNoCover()
+    {
+      media.WriteFile("song.mp3");
+      var prefix = Mount();
+
+      var (_, items, didl) = DlnaClient.Browse("127.0.0.1", server.Port, prefix);
+
+      var item = Assert.Single(items);
+      Assert.Null(item.CoverUrl);
+      Assert.DoesNotContain("/cover/", didl);
+      Assert.Equal(HttpStatusCode.NotFound, CoverStatus(prefix, item));
+    }
+
+    [Fact]
+    public void AudioArtIsServed()
+    {
+      var art = media.Combine("art.jpg");
+      TestMedia.WriteJpeg(art, 500, 500);
+      TestMedia.WriteMp3WithArt(media.Combine("song.mp3"), File.ReadAllBytes(art));
+      File.Delete(art);
+      var prefix = Mount();
+
+      var (_, items, _) = DlnaClient.Browse("127.0.0.1", server.Port, prefix);
+
+      var item = Assert.Single(items);
+      Assert.Equal("object.item.audioItem.musicTrack", item.Class);
+      Assert.True(TestMedia.IsJpeg(DlnaClient.GetBytes(item.CoverUrl)));
+    }
+
+    /// <summary>
+    ///   Regression: a thumbnail is only made when its link is fetched, and
+    ///   when that failed (here, a file that isn't an image) the response was
+    ///   a 500.
+    /// </summary>
+    [Fact]
+    public void CoverThatCannotBeMadeIsNotFound()
+    {
+      media.WriteFile("photo.jpg");
+      var prefix = Mount();
+
+      var (_, items, _) = DlnaClient.Browse("127.0.0.1", server.Port, prefix);
+
+      var item = Assert.Single(items);
+      Assert.Equal(HttpStatusCode.NotFound, CoverStatus(prefix, item));
+      // Failures aren't remembered, so asking again tries again.
+      Assert.Equal(HttpStatusCode.NotFound, CoverStatus(prefix, item));
+    }
+
     [Fact]
     public void VideoDurationAndThumbnailComeFromFFmpeg()
     {

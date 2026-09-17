@@ -61,21 +61,24 @@ namespace NMaier.SimpleDlna.Server
         return;
       }
       try {
+        // Clients take an albumArtURI as a promise of an image and fetch it,
+        // so an item without a cover (audio without embedded art) gets none.
         var c = cover.Cover;
+        if (c == null) {
+          return;
+        }
         var curl =
           $"http://{request.LocalEndPoint.Address}:{request.LocalEndPoint.Port}{Prefix}cover/{resource.Id}/i.jpg";
-        var icon = result.CreateElement("upnp", "albumArtURI", NS_UPNP);
+        var albumArt = result.CreateElement("upnp", "albumArtURI", NS_UPNP);
         var profile = result.CreateAttribute("dlna", "profileID", NS_DLNA);
         profile.InnerText = "JPEG_TN";
-        icon.SetAttributeNode(profile);
-        icon.InnerText = curl;
-        item.AppendChild(icon);
-        icon = result.CreateElement("upnp", "icon", NS_UPNP);
+        albumArt.SetAttributeNode(profile);
+        albumArt.InnerText = curl;
+        var icon = result.CreateElement("upnp", "icon", NS_UPNP);
         profile = result.CreateAttribute("dlna", "profileID", NS_DLNA);
         profile.InnerText = "JPEG_TN";
         icon.SetAttributeNode(profile);
         icon.InnerText = curl;
-        item.AppendChild(icon);
 
         var res = result.CreateElement(string.Empty, "res", NS_DIDL);
         res.InnerText = curl;
@@ -94,6 +97,11 @@ namespace NMaier.SimpleDlna.Server
         }
         res.SetAttribute("protocolInfo",
                          $"http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_TN;DLNA.ORG_OP=01;DLNA.ORG_CI=1;DLNA.ORG_FLAGS={DlnaMaps.DefaultInteractive}");
+
+        // Appended only once all three are built: a failure part way used to
+        // leave the albumArtURI and icon behind without the res.
+        item.AppendChild(albumArt);
+        item.AppendChild(icon);
         item.AppendChild(res);
       }
       catch (Exception) {
