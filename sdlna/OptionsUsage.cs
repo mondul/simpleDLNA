@@ -133,18 +133,9 @@ namespace NMaier.SimpleDlna
     private List<(string ArgText, string HelpText)> UsageEntries(
       HelpCategory category)
     {
-      const BindingFlags FLAGS =
-        BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.Instance;
-      var type = GetType();
-      var members = type.GetFields(FLAGS).Cast<MemberInfo>()
-        .Concat(type.GetProperties(FLAGS));
-
       var options = new List<(string SortName, string ArgText, string HelpText)>();
       (string ArgText, string HelpText)? parameters = null;
-      foreach (var member in members) {
-        var memberType = member is FieldInfo field
-          ? field.FieldType
-          : ((PropertyInfo)member).PropertyType;
+      foreach (var (member, memberType) in OptionMembers()) {
         var elementType = memberType.IsArray
           ? memberType.GetElementType()
           : memberType;

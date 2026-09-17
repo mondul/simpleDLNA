@@ -11,6 +11,33 @@ namespace NMaier.SimpleDlna.Tests.Support
 
     public string Output;
 
+    /// <summary>
+    ///   Runs <paramref name="command" />, which returns the exit code, with
+    ///   the console captured.
+    /// </summary>
+    public static CommandResult Capture(Func<int> command)
+    {
+      var originalOut = Console.Out;
+      var originalError = Console.Error;
+      var output = new StringWriter();
+      var error = new StringWriter();
+      Console.SetOut(output);
+      Console.SetError(error);
+      try {
+        var exitCode = command();
+        return new CommandResult
+        {
+          ExitCode = exitCode,
+          Output = output.ToString(),
+          Error = error.ToString()
+        };
+      }
+      finally {
+        Console.SetOut(originalOut);
+        Console.SetError(originalError);
+      }
+    }
+
     public override string ToString()
     {
       return $"exit {ExitCode}\n--- stdout:\n{Output}\n--- stderr:\n{Error}";
@@ -25,25 +52,7 @@ namespace NMaier.SimpleDlna.Tests.Support
   {
     public static CommandResult Run(params string[] args)
     {
-      var originalOut = Console.Out;
-      var originalError = Console.Error;
-      var output = new StringWriter();
-      var error = new StringWriter();
-      Console.SetOut(output);
-      Console.SetError(error);
-      try {
-        var exitCode = ServerCommand.Run(args);
-        return new CommandResult
-        {
-          ExitCode = exitCode,
-          Output = output.ToString(),
-          Error = error.ToString()
-        };
-      }
-      finally {
-        Console.SetOut(originalOut);
-        Console.SetError(originalError);
-      }
+      return CommandResult.Capture(() => ServerCommand.Run(args));
     }
   }
 }
