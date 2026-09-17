@@ -201,7 +201,10 @@ Each of these has broken something before.
   .NET.** It compiles without a warning. Use `ThreadPool.QueueUserWorkItem`
   or tasks.
 - **`Assembly.Location` is `""` in a single-file executable.** Use
-  `AppContext.BaseDirectory` for the program's folder.
+  `AppContext.BaseDirectory` for the program's folder. Libraries read it
+  too: GetOptNet's `AssembleUsage` names the program after the entry
+  assembly's file and throws there, so `sdlna/OptionsUsage.cs` replaces it,
+  and `UsageTests` runs the usage with a file-less entry assembly.
 - **`Environment.GetFolderPath` returns `""` for a folder that doesn't
   exist**, such as the home folder of a service account. Pass
   `Environment.SpecialFolderOption.DoNotVerify` when you need the path, and

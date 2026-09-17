@@ -14,7 +14,7 @@ using NMaier.SimpleDlna.Utilities;
 namespace NMaier.SimpleDlna
 {
   [GetOptOptions(AcceptPrefixType = ArgumentPrefixTypes.Dashes, UsageEpilog = EPILOG)]
-  internal class Options : GetOpt
+  internal partial class Options : GetOpt
   {
     private const string EPILOG =
       "Given folders, sdlna serves just those, using only the options above, and\n" +
