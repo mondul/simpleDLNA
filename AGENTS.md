@@ -63,7 +63,7 @@ Layout
 |------------|------------------------------|------------------------------|------|
 | `util`     | `SimpleDlna.Utilities`       | -                            | Logging base class, SQLite helpers, ffmpeg discovery and invocation, `StreamPump`, MAC lookup, natural sorting, `Repository<T>` |
 | `server`   | `SimpleDlna.Server`          | util                         | HTTP server, SSDP, UPnP/DLNA handlers, MIME and profile maps, views, comparers |
-| `thumbs`   | `SimpleDlna.Thumbnails`      | util, server                 | Thumbnails: images through SkiaSharp, video through ffmpeg |
+| `thumbs`   | `SimpleDlna.Thumbnails`      | util, server                 | Thumbnails: images through ImageSharp, video through ffmpeg |
 | `fsserver` | `SimpleDlna.FileMediaServer` | util, server, thumbs         | `FileServer`: scans folders into media items, reads tags with TagLibSharp, caches metadata in SQLite |
 | `sdlna`    | `sdlna`                      | util, server, fsserver       | Console entry point, command-line options, configuration file, `--server` commands |
 | `tests`    | `SimpleDlna.Tests`           | all of the above             | xUnit v3 test suite |
@@ -156,8 +156,8 @@ runs it.
   APIs (xUnit analyzer rule xUnit1051).
 - **Helpers** in `tests/Support`:
   - `TempDirectory` creates and deletes a scratch folder.
-  - `TestMedia` writes real JPEGs (SkiaSharp) and, when ffmpeg is installed,
-    short videos.
+  - `TestMedia` writes real JPEGs, transparent PNGs and animated GIFs
+    (ImageSharp) and, when ffmpeg is installed, short videos.
   - `TestFileServer.Create` builds a `FileServer` over a folder.
   - `ConfigurationHome` redirects the configuration file to a scratch folder
     and reads back what was written.
@@ -201,8 +201,8 @@ Each of these has broken something before.
   `Environment.SpecialFolderOption.DoNotVerify` when you need the path, and
   skip empty results when searching (`FFmpeg.GetSpecialLocations`).
 - **Single-file bundles and native libraries.** With
-  `IncludeNativeLibrariesForSelfExtract=true`, the host extracts SkiaSharp
-  and SQLite into `$HOME/.net` before `Main` runs, and refuses to start at all
+  `IncludeNativeLibrariesForSelfExtract=true`, the host extracts SQLite
+  into `$HOME/.net` before `Main` runs, and refuses to start at all
   when `HOME` is missing or read-only. Publish them beside the executable
   instead.
 - **Windows-only features.** Looking up a client's MAC address
@@ -210,11 +210,14 @@ Each of these has broken something before.
   never match elsewhere. The `.sdlna` folder's hidden attribute and the
   console icon are Windows-only too. Guard such code with
   `OperatingSystem.IsWindows()`.
-- **SkiaSharp's native library comes from per-platform packages.** The main
-  package brings Windows and macOS; Linux needs
-  `SkiaSharp.NativeAssets.Linux.NoDependencies`, the variant that doesn't
-  require fontconfig. Image thumbnails failing on one OS only usually means a
-  missing asset package.
+- **ImageSharp stays on 3.1.** ImageSharp 4 fails Release builds unless a
+  Six Labors license key is configured. 3.1 is under the Six Labors Split
+  License, which grants Apache 2.0 to open-source projects like this one.
+- **Thumbnails decode at the size they are shown.** `ThumbnailMaker.LoadImage`
+  reads the image's size first and passes the fitted size as
+  `DecoderOptions.TargetSize`, so JPEGs decode at a reduced scale (about
+  three times faster for a 12 MP photo). `TargetSize` also enlarges smaller
+  images, so it is only set when shrinking.
 
 ### Protocol
 
