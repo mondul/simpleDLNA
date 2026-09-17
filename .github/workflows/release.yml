@@ -168,17 +168,16 @@ jobs:
         run: |
           set -euo pipefail
           # Self-contained so the binary runs without a .NET install, and
-          # single-file so the managed code is one executable. All four
+          # single-file so the whole program is one executable. All four
           # targets cross-publish cleanly from Linux -- no native toolchain
           # involved, just the matching runtime pack.
           #
-          # Native libraries (SkiaSharp, SQLite) are NOT bundled into the
-          # executable. Bundled, they must be extracted at startup to
-          # $HOME/.net (or DOTNET_BUNDLE_EXTRACT_BASE_DIR), and when that
-          # directory is missing or read-only -- service accounts, containers
-          # -- the program refuses to start at all ("Failure processing
-          # application bundle"). Left beside the executable, nothing is
-          # extracted and nothing is written to the home directory.
+          # Every dependency is managed code (ImageSharp, LiteDB), so there
+          # are no native libraries to ship. IncludeNativeLibrariesForSelfExtract
+          # stays false: were one ever added, bundling it would make the
+          # program extract it to $HOME/.net at startup and refuse to start
+          # without a writable home. Left out, it shows up as a second file,
+          # which the next step rejects.
           #
           # Deliberately NOT trimmed: views, comparers and thumbnail loaders
           # are discovered by reflection over the assembly's types
@@ -205,10 +204,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist staging
-          # Ship the executable, its native libraries and the licence; the
-          # publish directory can also hold stray native .pdb files.
-          find publish -maxdepth 1 -type f ! -name '*.pdb' -exec cp {} staging/ \;
-          cp LICENSE staging/
+          # The release is the executable alone. Anything else in the publish
+          # output is a dependency that would need shipping beside it.
+          exe=sdlna
+          if [ "$RID" = win-x64 ]; then
+            exe=sdlna.exe
+          fi
+          published=$(cd publish && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')
+          if [ "$published" != "$exe " ]; then
+            echo "::error::Expected only $exe in the publish output, found: $published"
+            exit 1
+          fi
+          cp "publish/$exe" LICENSE staging/
           name="sdlna-${VERSION}-${RID}"
           if [ "${{ matrix.archive }}" = "zip" ]; then
             (cd staging && zip -9 -r "../dist/${name}.zip" .)
@@ -224,9 +231,50 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
+  smoke:
+    name: Smoke test ${{ matrix.rid }}
+    needs: [version, build]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Each binary on the platform it was built for. Nothing else runs
+        # the published executables before they are released.
+        include:
+          - rid: win-x64
+            os: windows-latest
+            archive: zip
+          - rid: osx-arm64
+            os: macos-latest
+            archive: tar.gz
+          - rid: linux-x64
+            os: ubuntu-latest
+            archive: tar.gz
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/smoke
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdlna-${{ matrix.rid }}
+          path: artifact
+
+      - name: Serve, browse and stop the published binary
+        env:
+          ARCHIVE: artifact/sdlna-${{ needs.version.outputs.version }}-${{ matrix.rid }}.${{ matrix.archive }}
+        run: bash .github/smoke/run.sh "$ARCHIVE" "$RUNNER_TEMP/smoke"
+
   release:
     name: Publish release
-    needs: [version, build]
+    needs: [version, build, smoke]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -252,9 +300,9 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "Self-contained builds of the \`sdlna\` console server."
-            echo "No .NET runtime install is required: unpack and run. Keep the"
-            echo "native libraries next to the executable."
+            echo "Self-contained builds of the \`sdlna\` console server, each a"
+            echo "single executable. No .NET runtime install is required: unpack"
+            echo "and run."
             echo
             echo "| Platform | Asset |"
             echo "| --- | --- |"

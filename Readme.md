@@ -25,11 +25,10 @@ Downloads
 
 Every code change on `master` publishes a
 [release](../../releases) with self-contained binaries for Windows x64,
-macOS ARM64, and Linux x64 and ARM64. They carry their own runtime, so
-nothing needs to be installed: unpack and run. Each archive holds the `sdlna`
-executable and two native libraries it needs (SkiaSharp and SQLite). Keep them
-in the same folder; to put `sdlna` on your `PATH`, link to it rather than
-moving the executable on its own.
+macOS ARM64, and Linux x64 and ARM64. Each is a single `sdlna` executable
+that carries its own runtime, so nothing needs to be installed: unpack it and
+run it, or move it anywhere on your `PATH`. On Linux, the system's ICU library
+(`libicu`) is needed, as for any .NET program; most distributions include it.
 
 Each release ships a `SHA256SUMS.txt`; verify a download with
 `sha256sum -c SHA256SUMS.txt` (`shasum -a 256 -c` on macOS).

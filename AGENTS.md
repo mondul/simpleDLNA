@@ -315,10 +315,15 @@ Releases
   on Linux, Windows and macOS, with ffmpeg installed so the video tests can't
   quietly skip. Nothing is built unless all three pass.
 - **Binaries.** `build` publishes `win-x64`, `osx-arm64`, `linux-x64` and
-  `linux-arm64` from Linux: self-contained, single-file, native libraries
-  beside the executable, untrimmed (see [Traps](#traps)). `release` uploads
-  the archives with `SHA256SUMS.txt` and notes listing the commits since the
-  previous tag.
+  `linux-arm64` from Linux: self-contained, single-file and untrimmed (see
+  [Traps](#traps)). The build fails if the publish output holds anything
+  but the executable, and each archive holds just it and `LICENSE`.
+- **Smoke test.** `smoke` runs each archive on its own platform (including an
+  Arm Linux runner) with `.github/smoke/run.sh`: it serves two images with
+  `HOME` pointing nowhere, browses them, checks downloads, JPEG thumbnails
+  and the cache, and stops the server with SIGTERM. `release` waits for all
+  four, then uploads the archives with `SHA256SUMS.txt` and notes listing the
+  commits since the previous tag.
 - **Skip tokens.** GitHub skips the workflow when the pushed head commit's
   message contains `[skip ci]`, `[ci skip]`, `[no ci]`, `[skip actions]` or
   `[actions skip]` anywhere, even quoted while explaining something. Keep
