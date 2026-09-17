@@ -52,6 +52,16 @@ echo "archive holds: $contents"
 
 cp "$fixtures/logo.png" "$fixtures/photo.jpg" "$work/media/"
 
+# Git Bash's kill can't see native Windows processes, so there the
+# executable's liveness is checked with tasklist.
+alive() {
+  if $windows; then
+    tasklist //FI "IMAGENAME eq sdlna.exe" //NH 2>/dev/null | grep -qi 'sdlna\.exe'
+  else
+    kill -0 "$pid" 2>/dev/null
+  fi
+}
+
 home="$work/no-such-home"
 cache="$work/cache.db"
 HOME="$home" "./$exe" -l INFO -p 0 -c "$cache" "$work/media" >"$work/sdlna.log" 2>&1 &
@@ -59,14 +69,16 @@ pid=$!
 
 port=
 for _ in $(seq 1 120); do
-  if ! kill -0 "$pid" 2>/dev/null; then
-    fail "sdlna exited during startup"
+  sleep 0.5
+  if ! alive; then
+    status=0
+    wait "$pid" || status=$?
+    fail "sdlna exited during startup, with status $status"
   fi
   if grep -q ' mounted' "$work/sdlna.log"; then
     port=$(sed -n 's/.* on port \([0-9][0-9]*\).*/\1/p' "$work/sdlna.log" | head -n1)
     break
   fi
-  sleep 0.5
 done
 [ -n "$port" ] || fail "sdlna did not start within a minute"
 echo "listening on port $port"
