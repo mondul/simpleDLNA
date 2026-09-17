@@ -93,7 +93,9 @@ instead, exactly as `sdlna .` would, and prints a warning explaining how to
 save servers. A configuration file that exists but is invalid is reported as an
 error rather than skipped.
 
-The options split accordingly. `sdlna --help` lists them all.
+The options split accordingly. `sdlna --help` lists them all, as do `-h`,
+`-?` and, on Windows, `/?`. An unknown option or an invalid value prints the
+error and that list, and exits with status 2.
 
 | Option | With folders, or no servers configured | Configured servers |
 |---|---|---|

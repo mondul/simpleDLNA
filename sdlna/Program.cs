@@ -188,7 +188,12 @@ namespace NMaier.SimpleDlna
       Console.WriteLine("than 50 of them; no-cascade keeps them all at the top.");
     }
 
-    private static void Main(string[] args)
+    /// <summary>
+    ///   Exits with status 0, 1 for a failure, or 2 for a usage error.
+    ///   Internal for tests, which run the command lines that end before
+    ///   serving.
+    /// </summary>
+    internal static void Main(string[] args)
     {
       Console.WriteLine();
       if (args.Length > 0 && args[0] == "--server") {
@@ -203,22 +208,7 @@ namespace NMaier.SimpleDlna
 
       var options = new Options();
       try {
-        // On Windows this changes the console's input mode, and throws when
-        // standard input is not a console: a background job, a scheduled task,
-        // a service wrapper. Ctrl+C can't arrive through such an input anyway.
-        if (!Console.IsInputRedirected) {
-          Console.TreatControlCAsInput = false;
-        }
-        Console.CancelKeyPress += CancelKeyPressed;
-        try {
-          terminateRegistration = PosixSignalRegistration.Create(
-            PosixSignal.SIGTERM, TerminateRequested);
-        }
-        catch (PlatformNotSupportedException) {
-          // Ctrl+C still works.
-        }
-
-        options.Parse(args);
+        options.ParseCommandLine(args, OperatingSystem.IsWindows());
         if (options.ShowHelp) {
           options.PrintUsage();
           return;
@@ -239,6 +229,26 @@ namespace NMaier.SimpleDlna
           ListOrders();
           return;
         }
+
+        // The shutdown handlers are set up only now that sdlna is going to
+        // serve, so the command lines above leave nothing behind when tests
+        // run them in-process.
+        //
+        // On Windows this changes the console's input mode, and throws when
+        // standard input is not a console: a background job, a scheduled task,
+        // a service wrapper. Ctrl+C can't arrive through such an input anyway.
+        if (!Console.IsInputRedirected) {
+          Console.TreatControlCAsInput = false;
+        }
+        Console.CancelKeyPress += CancelKeyPressed;
+        try {
+          terminateRegistration = PosixSignalRegistration.Create(
+            PosixSignal.SIGTERM, TerminateRequested);
+        }
+        catch (PlatformNotSupportedException) {
+          // Ctrl+C still works.
+        }
+
         if (options.Directories.Length == 0) {
           var config = ChooseConfiguredServers(options, Console.Error);
           if (config != null) {
@@ -313,6 +323,10 @@ namespace NMaier.SimpleDlna
       catch (GetOptException ex) {
         Console.Error.WriteLine("Error: {0}\n\n", ex.Message);
         options.PrintUsage();
+        // Status 2 is a usage error, as for --server. This used to exit with
+        // 0, so scripts and service managers took a mistyped option for
+        // success.
+        Environment.ExitCode = 2;
       }
       catch (ConfigurationException ex) {
         Console.Error.WriteLine("Error: {0}", ex.Message);

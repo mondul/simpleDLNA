@@ -79,9 +79,11 @@ Management; `PackageReference` items in projects carry no `Version`).
 
 1. `sdlna/Program.cs` `Main` hands `--server ...` to `ServerCommand.Run`,
    which edits the configuration file and exits. Otherwise it parses
-   `Options`. With folders it builds one ad-hoc `FileServer`; without,
-   `ChooseConfiguredServers` either returns the configuration file's servers
-   (one `FileServer` each) or falls back to serving the current directory.
+   `Options` (`ParseCommandLine`); an invalid command line prints the error
+   and usage and exits with 2. With folders it builds one ad-hoc
+   `FileServer`; without, `ChooseConfiguredServers` either returns the
+   configuration file's servers (one `FileServer` each) or falls back to
+   serving the current directory.
 2. Every `FileServer` is registered with a single `HttpServer`
    (`server/Http`), which mounts it at `/mm-N/` as a `MediaMount`
    (`server/Handlers`). `SsdpHandler` announces each mount over UDP multicast
@@ -165,6 +167,8 @@ runs it.
     and reads back what was written.
   - `ServerCommandRunner` runs `--server` commands and captures their output
     and exit code.
+  - `ProgramRunner` does the same for `Program.Main`, for command lines that
+    end before serving (`--help`, an invalid option); others start a server.
   - `DlnaTestServer` and `DlnaClient` host file servers on a real
     `HttpServer` and talk to it with SOAP, choosing the User-Agent and the
     local address each request connects through.
@@ -201,7 +205,18 @@ Each of these has broken something before.
   .NET.** It compiles without a warning. Use `ThreadPool.QueueUserWorkItem`
   or tasks.
 - **`Assembly.Location` is `""` in a single-file executable.** Use
-  `AppContext.BaseDirectory` for the program's folder.
+  `AppContext.BaseDirectory` for the program's folder. Libraries read it
+  too: GetOptNet's `AssembleUsage` names the program after the entry
+  assembly's file and throws there, so `sdlna/OptionsUsage.cs` replaces it,
+  and `UsageTests` runs the usage with a file-less entry assembly.
+- **GetOptNet misreads parts of the command line.** It reads short options
+  only when a letter or digit follows the dash, so `-?` was taken for a
+  folder, and it reports a number it can't read (`-p abc`) as a
+  `ProgrammingErrorException` rather than a `GetOptException`.
+  `Options.ParseCommandLine` (`sdlna/OptionsParsing.cs`) handles both; parse
+  through it rather than `Parse`. To leave `-?` alone where it is a value
+  (`-n -?`), it decides itself which short options take the next argument,
+  and `CommandLineTests` holds that to GetOptNet's own reading.
 - **`Environment.GetFolderPath` returns `""` for a folder that doesn't
   exist**, such as the home folder of a service account. Pass
   `Environment.SpecialFolderOption.DoNotVerify` when you need the path, and
