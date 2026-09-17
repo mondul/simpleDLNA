@@ -209,6 +209,11 @@ Each of these has broken something before.
   `$HOME/.net` before `Main` runs, and then the program refuses to start at
   all when `HOME` is missing or read-only. Check the `dotnet publish` output
   before adding a package.
+- **Shutdown has to be graceful.** Ctrl+C and SIGTERM (how services and
+  containers are stopped) both release `Main`, which then disposes the HTTP
+  server and every file server; that closes the caches and removes their
+  lock files. `HttpServer.Dispose` alone only unregisters the file servers.
+  Anything else that must be released at exit belongs on that path.
 - **Windows-only features.** Looking up a client's MAC address
   (`util/AddressToMacResolver.cs`) only works on Windows, so MAC restrictions
   never match elsewhere. The `.sdlna` folder's hidden attribute and the

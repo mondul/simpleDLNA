@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using log4net;
@@ -22,6 +23,11 @@ namespace NMaier.SimpleDlna
 
     private static uint cancelHitCount;
 
+    /// <summary>
+    ///   Kept referenced: the handler is unregistered when this is collected.
+    /// </summary>
+    private static PosixSignalRegistration terminateRegistration;
+
     private static void CancelKeyPressed(object sender,
       ConsoleCancelEventArgs e)
     {
@@ -31,8 +37,24 @@ namespace NMaier.SimpleDlna
         return;
       }
       e.Cancel = true;
+      RequestShutdown("Shutdown requested");
+    }
+
+    /// <summary>
+    ///   Services and containers are stopped with SIGTERM (systemctl stop,
+    ///   docker stop), which otherwise ends the process without the shutdown
+    ///   Ctrl+C gets, leaving the caches unclosed.
+    /// </summary>
+    private static void TerminateRequested(PosixSignalContext context)
+    {
+      context.Cancel = true;
+      RequestShutdown("Termination requested");
+    }
+
+    private static void RequestShutdown(string reason)
+    {
       blockEvent.Set();
-      LogManager.GetLogger(typeof (Program)).Info("Shutdown requested");
+      LogManager.GetLogger(typeof (Program)).Info(reason);
       Console.Title = "SimpleDLNA - shutting down ...";
     }
 
@@ -167,6 +189,13 @@ namespace NMaier.SimpleDlna
       try {
         Console.TreatControlCAsInput = false;
         Console.CancelKeyPress += CancelKeyPressed;
+        try {
+          terminateRegistration = PosixSignalRegistration.Create(
+            PosixSignal.SIGTERM, TerminateRequested);
+        }
+        catch (PlatformNotSupportedException) {
+          // Ctrl+C still works.
+        }
 
         options.Parse(args);
         if (options.ShowHelp) {
